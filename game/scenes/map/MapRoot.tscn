@@ -12,6 +12,10 @@ script = ExtResource("1_map_root")
 script = ExtResource("2_overlay")
 mode = "border"
 
+[node name="FeatureOverlay" type="Node2D" parent="."]
+script = ExtResource("2_overlay")
+mode = "features"
+
 [node name="RiverOverlay" type="Node2D" parent="."]
 script = ExtResource("2_overlay")
 mode = "rivers"

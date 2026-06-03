@@ -1,0 +1,25 @@
+{
+  "version": 1,
+  "width": 40,
+  "height": 20,
+  "seed": 260603,
+  "generated_output_path": "user://generated_map.json",
+  "start_city": {
+    "col": 25,
+    "row": 13,
+    "name": "Capital"
+  },
+  "terrain_thresholds": {
+    "ocean_elevation": 0.36,
+    "mountain_ruggedness": 0.20,
+    "hill_ruggedness": 0.09,
+    "lake_elevation": 0.46,
+    "desert_rainfall": 0.38,
+    "swamp_rainfall": 0.53
+  },
+  "generation": {
+    "continent_bias": 0.42,
+    "river_count": 8,
+    "river_max_steps": 80
+  }
+}

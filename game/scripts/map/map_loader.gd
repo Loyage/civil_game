@@ -1,15 +1,17 @@
 class_name MapLoader
 extends RefCounted
 
-const MAP_PATH := "res://game/data/maps/start_map.json"
+const CONFIG_PATH := "res://game/data/maps/map_generation_config.json"
 const OffsetCoordScript := preload("res://game/scripts/map/offset_coord.gd")
-const HexLayoutScript := preload("res://game/scripts/map/hex_layout.gd")
+const GridLayoutScript := preload("res://game/scripts/map/grid_layout.gd")
 const MapStateScript := preload("res://game/scripts/map/map_state.gd")
 const TileStateScript := preload("res://game/scripts/map/tile_state.gd")
 
-func load_start_map():
-	var data := _read_json(MAP_PATH)
-	return _build_map_state(data)
+func load_generated_map():
+	var config := _read_json(CONFIG_PATH)
+	var map_state = _generate_map_state(config)
+	_write_generated_map(config, map_state)
+	return map_state
 
 func _read_json(path: String) -> Dictionary:
 	var file := FileAccess.open(path, FileAccess.READ)
@@ -25,36 +27,29 @@ func _read_json(path: String) -> Dictionary:
 
 	return json.data
 
-func _build_map_state(data: Dictionary):
-	var width := int(data.get("width", 40))
-	var height := int(data.get("height", 20))
+func _generate_map_state(config: Dictionary):
+	var width := int(config.get("width", 40))
+	var height := int(config.get("height", 20))
+	var seed := int(config.get("seed", Time.get_unix_time_from_system()))
 	var map_state = MapStateScript.new(width, height)
-	var start_city: Dictionary = data.get("start_city", {})
+	var start_city: Dictionary = config.get("start_city", {})
 	var start_col := int(start_city.get("col", 0))
 	var start_row := int(start_city.get("row", 0))
 	map_state.start_city_name = String(start_city.get("name", "Capital"))
 
-	var lake_lookup := _build_point_lookup(data.get("lakes", []))
-	var mountain_lookup := _build_mountain_lookup(data.get("mountain_paths", []))
-	var feature_lookup := _build_feature_lookup(data.get("feature_patches", []), width, height)
-	var river_lookup := _build_river_lookup(data.get("river_edges", []))
+	var values := {}
+	for row in range(height):
+		for col in range(width):
+			values[_point_key(col, row)] = _generate_base_values(config, seed, col, row, width, height)
+
+	_add_rivers(config, seed, values, width, height)
 
 	for row in range(height):
 		for col in range(width):
 			var offset = OffsetCoordScript.new(col, row)
-			var axial = HexLayoutScript.offset_to_axial(offset)
-			var tile = TileStateScript.new(axial.key(), axial, offset, _terrain_for(data, col, row))
-
 			var point_key := _point_key(col, row)
-			if mountain_lookup.has(point_key):
-				tile.terrain_id = "mountain"
-			if lake_lookup.has(point_key):
-				tile.terrain_id = "ocean"
-
-			var features: Dictionary = feature_lookup.get(point_key, {})
-			tile.has_forest = bool(features.get("forest", false)) and tile.terrain_id != "ocean" and tile.terrain_id != "mountain"
-			tile.has_hill = bool(features.get("hill", false)) and tile.terrain_id != "ocean" and tile.terrain_id != "mountain"
-			tile.river_edges = river_lookup.get(point_key, PackedStringArray())
+			var tile = TileStateScript.new(point_key, offset, "plains")
+			_apply_values_to_tile(config, values, point_key, tile, width, height)
 			tile.is_city_center = col == start_col and row == start_row
 
 			if tile.is_city_center:
@@ -65,79 +60,218 @@ func _build_map_state(data: Dictionary):
 
 	return map_state
 
-func _terrain_for(data: Dictionary, col: int, row: int) -> String:
-	var continent: Dictionary = data.get("continent", {})
-	var center_col := float(continent.get("center_col", 20))
-	var center_row := float(continent.get("center_row", 10))
-	var radius_col := float(continent.get("radius_col", 19))
-	var radius_row := float(continent.get("radius_row", 9))
-	var dx := (float(col) - center_col) / radius_col
-	var dy := (float(row) - center_row) / radius_row
+func _generate_base_values(config: Dictionary, seed: int, col: int, row: int, width: int, height: int) -> Dictionary:
+	var x: float = float(col) / max(1.0, float(width - 1))
+	var y: float = float(row) / max(1.0, float(height - 1))
+	var center_distance: float = Vector2(x - 0.5, y - 0.5).length() * 1.3
+	var continent_bias: float = float(config.get("generation", {}).get("continent_bias", 0.26))
+	var elevation: float = 0.64 - center_distance * continent_bias
+	elevation += _centered_noise(seed, col, row, 0) * 0.26
+	elevation += _centered_smooth_noise(seed, col, row, 1) * 0.32
+	elevation = clampf(elevation, 0.0, 1.0)
 
-	if dx * dx + dy * dy > 1.0:
-		return String(data.get("default_terrain", "ocean"))
+	var rainfall: float = 0.48 + _centered_smooth_noise(seed, col, row, 2) * 0.62 - max(0.0, elevation - 0.62) * 0.16
+	rainfall = clampf(rainfall, 0.0, 1.0)
 
-	var mix_value := (col * 17 + row * 31) % 10
-	return "grassland" if mix_value < 5 else "plains"
+	var temperature: float = 0.82 - abs(y - 0.5) * 1.25 + _centered_smooth_noise(seed, col, row, 3) * 0.22 - elevation * 0.18
+	temperature = clampf(temperature, 0.0, 1.0)
 
-func _build_point_lookup(points: Array) -> Dictionary:
-	var lookup := {}
-	for point in points:
-		lookup[_point_key(int(point.get("col", 0)), int(point.get("row", 0)))] = true
-	return lookup
+	return {
+		"elevation": elevation,
+		"rainfall": rainfall,
+		"temperature": temperature,
+		"river_strength": 0.0,
+		"river_flow_x": 0,
+		"river_flow_y": 0
+	}
 
-func _build_mountain_lookup(paths: Array) -> Dictionary:
-	var lookup := {}
-	for path in paths:
-		var points: Array = path.get("points", [])
-		for index in range(points.size() - 1):
-			var start: Array = points[index]
-			var end: Array = points[index + 1]
-			for point in _line_points(Vector2i(start[0], start[1]), Vector2i(end[0], end[1])):
-				lookup[_point_key(point.x, point.y)] = true
-	return lookup
+func _apply_values_to_tile(config: Dictionary, values: Dictionary, point_key: String, tile, width: int, height: int) -> void:
+	var thresholds: Dictionary = config.get("terrain_thresholds", {})
+	var value: Dictionary = values[point_key]
+	tile.elevation = float(value.get("elevation", 0.0))
+	tile.rainfall = float(value.get("rainfall", 0.0))
+	tile.temperature = float(value.get("temperature", 0.0))
+	tile.river_strength = float(value.get("river_strength", 0.0))
+	tile.has_river = tile.river_strength > 0.0
+	tile.river_flow = Vector2i(int(value.get("river_flow_x", 0)), int(value.get("river_flow_y", 0)))
+	tile.ruggedness = _ruggedness(values, tile.offset.col, tile.offset.row, width, height)
+	tile.moisture = clampf(tile.rainfall + tile.river_strength * 0.25, 0.0, 1.0)
 
-func _line_points(start: Vector2i, end: Vector2i) -> Array:
-	var points: Array = []
-	var delta: Vector2i = end - start
-	var steps: int = max(abs(delta.x), abs(delta.y))
-	if steps == 0:
-		return [start]
+	var ocean_threshold := float(thresholds.get("ocean_elevation", 0.32))
+	var mountain_threshold := float(thresholds.get("mountain_ruggedness", 0.34))
+	var hill_threshold := float(thresholds.get("hill_ruggedness", 0.16))
+	var lake_threshold := float(thresholds.get("lake_elevation", 0.38))
+	var desert_threshold := float(thresholds.get("desert_rainfall", 0.24))
+	var swamp_threshold := float(thresholds.get("swamp_rainfall", 0.74))
 
-	for step in range(steps + 1):
-		var t: float = float(step) / float(steps)
-		points.append(Vector2i(roundi(lerpf(start.x, end.x, t)), roundi(lerpf(start.y, end.y, t))))
+	if tile.elevation <= ocean_threshold:
+		tile.terrain_id = "ocean"
+		return
 
-	return points
+	if tile.rainfall <= desert_threshold and tile.temperature > 0.45:
+		tile.terrain_id = "desert"
+	elif tile.temperature < 0.28:
+		tile.terrain_id = "tundra"
+	elif tile.rainfall > 0.55:
+		tile.terrain_id = "grassland"
+	else:
+		tile.terrain_id = "plains"
 
-func _build_feature_lookup(patches: Array, width: int, height: int) -> Dictionary:
-	var lookup := {}
-	for patch in patches:
-		var feature := String(patch.get("feature", ""))
-		var center_col := int(patch.get("center_col", 0))
-		var center_row := int(patch.get("center_row", 0))
-		var radius := int(patch.get("radius", 1))
-		for row in range(center_row - radius, center_row + radius + 1):
-			for col in range(center_col - radius, center_col + radius + 1):
-				if col < 0 or col >= width or row < 0 or row >= height:
-					continue
-				var distance: int = abs(col - center_col) + abs(row - center_row)
-				if distance <= radius:
-					var key := _point_key(col, row)
-					if not lookup.has(key):
-						lookup[key] = {}
-					lookup[key][feature] = true
-	return lookup
+	if tile.ruggedness >= mountain_threshold and tile.elevation > ocean_threshold + 0.18:
+		tile.add_feature("mountain")
+	elif tile.ruggedness >= hill_threshold and tile.elevation > ocean_threshold + 0.08:
+		tile.add_feature("hill")
 
-func _build_river_lookup(entries: Array) -> Dictionary:
-	var lookup := {}
-	for entry in entries:
-		var key := _point_key(int(entry.get("col", 0)), int(entry.get("row", 0)))
-		var edges := PackedStringArray()
-		for edge in entry.get("edges", []):
-			edges.append(String(edge))
-		lookup[key] = edges
-	return lookup
+	if tile.elevation <= lake_threshold and tile.has_river and tile.terrain_id != "ocean":
+		tile.add_feature("lake")
+
+	if tile.rainfall >= swamp_threshold and tile.terrain_id != "ocean" and (tile.elevation <= lake_threshold + 0.15 or tile.has_river):
+		tile.add_feature("swamp")
+
+	if tile.rainfall > 0.50 and tile.terrain_id in ["grassland", "plains"] and not tile.is_mountain():
+		tile.add_feature("forest")
+
+func _add_rivers(config: Dictionary, seed: int, values: Dictionary, width: int, height: int) -> void:
+	var river_count: int = int(config.get("generation", {}).get("river_count", 5))
+	var max_steps: int = int(config.get("generation", {}).get("river_max_steps", 80))
+	var starts: Array = _highest_points(values, width, height, river_count)
+	for index in range(starts.size()):
+		_trace_river(seed + index * 97, starts[index], values, width, height, max_steps)
+
+func _trace_river(seed: int, start: Vector2i, values: Dictionary, width: int, height: int, max_steps: int) -> void:
+	var current: Vector2i = start
+	var visited := {}
+	for step in range(max_steps):
+		var key := _point_key(current.x, current.y)
+		if visited.has(key):
+			return
+		visited[key] = true
+		var value: Dictionary = values[key]
+		value["river_strength"] = max(float(value.get("river_strength", 0.0)), 1.0 - float(step) / float(max_steps))
+
+		var next: Vector2i = _lowest_neighbor(seed, current, values, width, height)
+		if next == current:
+			return
+
+		value["river_flow_x"] = next.x - current.x
+		value["river_flow_y"] = next.y - current.y
+		if float(values[_point_key(next.x, next.y)].get("elevation", 0.0)) <= 0.32:
+			return
+		current = next
+
+func _highest_points(values: Dictionary, width: int, height: int, count: int) -> Array:
+	var selected: Array = []
+	var selected_scores: Array = []
+	for row in range(height):
+		for col in range(width):
+			var point := Vector2i(col, row)
+			var score: float = float(values[_point_key(col, row)].get("elevation", 0.0))
+			if score <= 0.58:
+				continue
+			_insert_ranked_point(selected, selected_scores, point, score, count)
+	return selected
+
+func _insert_ranked_point(points: Array, scores: Array, point: Vector2i, score: float, limit: int) -> void:
+	var insert_at := points.size()
+	for index in range(points.size()):
+		if score > float(scores[index]):
+			insert_at = index
+			break
+	points.insert(insert_at, point)
+	scores.insert(insert_at, score)
+	while points.size() > limit:
+		points.pop_back()
+		scores.pop_back()
+
+func _lowest_neighbor(seed: int, current: Vector2i, values: Dictionary, width: int, height: int) -> Vector2i:
+	var best: Vector2i = current
+	var best_score: float = float(values[_point_key(current.x, current.y)].get("elevation", 0.0))
+	for direction in _directions8():
+		var next: Vector2i = current + direction
+		if next.x < 0 or next.x >= width or next.y < 0 or next.y >= height:
+			continue
+		var next_elevation: float = float(values[_point_key(next.x, next.y)].get("elevation", 0.0))
+		var score: float = next_elevation + _value_noise(seed, next.x, next.y, 8) * 0.025
+		if score < best_score:
+			best_score = score
+			best = next
+	return best
+
+func _ruggedness(values: Dictionary, col: int, row: int, width: int, height: int) -> float:
+	var center: float = float(values[_point_key(col, row)].get("elevation", 0.0))
+	var max_delta: float = 0.0
+	for direction in _directions8():
+		var next: Vector2i = Vector2i(col + direction.x, row + direction.y)
+		if next.x < 0 or next.x >= width or next.y < 0 or next.y >= height:
+			continue
+		var neighbor: float = float(values[_point_key(next.x, next.y)].get("elevation", 0.0))
+		max_delta = max(max_delta, abs(center - neighbor))
+	return max_delta
+
+func _smooth_noise(seed: int, col: int, row: int, salt: int) -> float:
+	var total: float = 0.0
+	var weight: float = 0.0
+	for dy in range(-2, 3):
+		for dx in range(-2, 3):
+			var distance: int = abs(dx) + abs(dy) + 1
+			var sample_weight: float = 1.0 / float(distance)
+			total += _value_noise(seed, col + dx, row + dy, salt) * sample_weight
+			weight += sample_weight
+	return total / weight
+
+func _centered_smooth_noise(seed: int, col: int, row: int, salt: int) -> float:
+	return _smooth_noise(seed, col, row, salt) - 0.5
+
+func _value_noise(seed: int, col: int, row: int, salt: int) -> float:
+	var n := int(seed) ^ int(col * 374761393) ^ int(row * 668265263) ^ int(salt * 1442695041)
+	n = (n ^ (n >> 13)) * 1274126177
+	n = n ^ (n >> 16)
+	return float(n & 0xffff) / 65535.0
+
+func _centered_noise(seed: int, col: int, row: int, salt: int) -> float:
+	return _value_noise(seed, col, row, salt) - 0.5
+
+func _directions8() -> Array:
+	return [
+		Vector2i(1, 0),
+		Vector2i(1, -1),
+		Vector2i(0, -1),
+		Vector2i(-1, -1),
+		Vector2i(-1, 0),
+		Vector2i(-1, 1),
+		Vector2i(0, 1),
+		Vector2i(1, 1)
+	]
+
+func _write_generated_map(config: Dictionary, map_state) -> void:
+	var path := String(config.get("generated_output_path", "user://generated_map.json"))
+	var file := FileAccess.open(path, FileAccess.WRITE)
+	if file == null:
+		push_warning("Cannot write generated map: %s" % path)
+		return
+	var tiles: Array = []
+	for tile in map_state.tiles_by_key.values():
+		tiles.append({
+			"col": tile.offset.col,
+			"row": tile.offset.row,
+			"terrain_id": tile.terrain_id,
+			"elevation": tile.elevation,
+			"rainfall": tile.rainfall,
+			"temperature": tile.temperature,
+			"ruggedness": tile.ruggedness,
+			"moisture": tile.moisture,
+			"has_river": tile.has_river,
+			"river_flow": [tile.river_flow.x, tile.river_flow.y],
+			"river_strength": tile.river_strength,
+			"features": Array(tile.features)
+		})
+	file.store_string(JSON.stringify({
+		"version": 1,
+		"seed": config.get("seed", null),
+		"width": map_state.width,
+		"height": map_state.height,
+		"tiles": tiles
+	}, "\t"))
 
 func _point_key(col: int, row: int) -> String:
-	return "%d:%d" % [col, row]
+	return GridLayoutScript.tile_key(col, row)

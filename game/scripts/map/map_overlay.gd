@@ -1,7 +1,7 @@
 class_name MapOverlay
 extends Node2D
 
-const HexLayoutScript := preload("res://game/scripts/map/hex_layout.gd")
+const GridLayoutScript := preload("res://game/scripts/map/grid_layout.gd")
 
 var map_state
 var terrain_layer: TileMapLayer
@@ -28,6 +28,8 @@ func _draw() -> void:
 		return
 
 	match mode:
+		"features":
+			_draw_features()
 		"rivers":
 			_draw_rivers()
 		"selection":
@@ -39,18 +41,41 @@ func _draw() -> void:
 
 func _draw_rivers() -> void:
 	for tile in map_state.tiles_by_key.values():
-		for edge in tile.river_edges:
-			var points := HexLayoutScript.edge_vertices(edge, 43.0)
-			if points.size() != 2:
-				continue
-			var center := _tile_center(tile)
-			draw_line(center + points[0], center + points[1], Color("#3677c8"), 5.0)
+		if not tile.has_river:
+			continue
+		var center := _tile_center(tile)
+		var flow := Vector2(tile.river_flow) * 32.0
+		if flow == Vector2.ZERO:
+			draw_circle(center, 8.0, Color("#3677c8"))
+		else:
+			draw_line(center - flow * 0.45, center + flow * 0.45, Color("#3677c8"), 5.0 + tile.river_strength * 3.0)
+
+func _draw_features() -> void:
+	for tile in map_state.tiles_by_key.values():
+		var center := _tile_center(tile)
+		if tile.is_lake():
+			draw_circle(center, 22.0, Color("#3f87c6"))
+		if tile.is_mountain():
+			var points := PackedVector2Array([
+				center + Vector2(0.0, -28.0),
+				center + Vector2(24.0, 22.0),
+				center + Vector2(-24.0, 22.0)
+			])
+			draw_colored_polygon(points, Color("#6f7374"))
+		elif tile.is_hill():
+			draw_arc(center, 20.0, PI, TAU, 16, Color("#776f48"), 4.0)
+		if tile.has_feature("forest"):
+			draw_circle(center + Vector2(-16.0, -10.0), 5.0, Color("#2f6f3f"))
+			draw_circle(center + Vector2(0.0, -12.0), 5.0, Color("#2f6f3f"))
+			draw_circle(center + Vector2(14.0, -8.0), 5.0, Color("#2f6f3f"))
+		if tile.is_swamp():
+			draw_line(center + Vector2(-22.0, 18.0), center + Vector2(22.0, 18.0), Color("#2e8066"), 4.0)
 
 func _draw_selection() -> void:
 	var tile = map_state.get_tile(selected_tile_key)
 	if tile == null:
 		return
-	_draw_hex_outline(_tile_center(tile), 44.0, Color("#fff0a6"), 3.0)
+	_draw_square_outline(_tile_center(tile), Color("#fff0a6"), 3.0)
 
 func _draw_city() -> void:
 	var tile = map_state.get_tile(city_tile_key)
@@ -63,15 +88,18 @@ func _draw_city() -> void:
 func _draw_border() -> void:
 	for tile in map_state.tiles_by_key.values():
 		if tile.owner_city_id != "":
-			_draw_hex_outline(_tile_center(tile), 45.0, Color("#f2d16b88"), 2.0)
+			_draw_square_outline(_tile_center(tile), Color("#f2d16b88"), 2.0)
 
-func _draw_hex_outline(center: Vector2, radius: float, color: Color, width: float) -> void:
-	var points := PackedVector2Array()
-	for i in range(6):
-		var angle := deg_to_rad(60.0 * i)
-		points.append(center + Vector2(cos(angle) * radius, sin(angle) * radius))
-	for i in range(6):
-		draw_line(points[i], points[(i + 1) % 6], color, width)
+func _draw_square_outline(center: Vector2, color: Color, width: float) -> void:
+	var half_size := Vector2(GridLayoutScript.TILE_PIXEL_SIZE) / 2.0
+	var points := PackedVector2Array([
+		center + Vector2(-half_size.x, -half_size.y),
+		center + Vector2(half_size.x, -half_size.y),
+		center + Vector2(half_size.x, half_size.y),
+		center + Vector2(-half_size.x, half_size.y)
+	])
+	for i in range(4):
+		draw_line(points[i], points[(i + 1) % 4], color, width)
 
 func _tile_center(tile) -> Vector2:
 	return terrain_layer.map_to_local(tile.offset.to_vector())
