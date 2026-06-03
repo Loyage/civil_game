@@ -1,0 +1,154 @@
+[gd_scene load_steps=2 format=3 uid="uid://civilization_map_generator_preview"]
+
+[ext_resource type="Script" path="res://game/scripts/dev/map_generator_preview.gd" id="1_preview"]
+
+[node name="MapGeneratorPreview" type="Control"]
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+script = ExtResource("1_preview")
+
+[node name="Background" type="ColorRect" parent="."]
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+color = Color(0.11, 0.12, 0.11, 1)
+
+[node name="Root" type="HBoxContainer" parent="."]
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = 16.0
+offset_top = 16.0
+offset_right = -16.0
+offset_bottom = -16.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_constants/separation = 16
+
+[node name="Controls" type="PanelContainer" parent="Root"]
+custom_minimum_size = Vector2(320, 0)
+layout_mode = 2
+
+[node name="Margin" type="MarginContainer" parent="Root/Controls"]
+layout_mode = 2
+theme_override_constants/margin_left = 14
+theme_override_constants/margin_top = 14
+theme_override_constants/margin_right = 14
+theme_override_constants/margin_bottom = 14
+
+[node name="Column" type="VBoxContainer" parent="Root/Controls/Margin"]
+layout_mode = 2
+theme_override_constants/separation = 10
+
+[node name="Title" type="Label" parent="Root/Controls/Margin/Column"]
+layout_mode = 2
+text = "地图生成器预览"
+
+[node name="SeedLabel" type="Label" parent="Root/Controls/Margin/Column"]
+layout_mode = 2
+text = "Seed"
+
+[node name="SeedInput" type="SpinBox" parent="Root/Controls/Margin/Column"]
+unique_name_in_owner = true
+layout_mode = 2
+max_value = 999999999.0
+value = 260603.0
+rounded = true
+
+[node name="WidthLabel" type="Label" parent="Root/Controls/Margin/Column"]
+layout_mode = 2
+text = "Width"
+
+[node name="WidthInput" type="SpinBox" parent="Root/Controls/Margin/Column"]
+unique_name_in_owner = true
+layout_mode = 2
+min_value = 8.0
+max_value = 256.0
+value = 40.0
+rounded = true
+
+[node name="HeightLabel" type="Label" parent="Root/Controls/Margin/Column"]
+layout_mode = 2
+text = "Height"
+
+[node name="HeightInput" type="SpinBox" parent="Root/Controls/Margin/Column"]
+unique_name_in_owner = true
+layout_mode = 2
+min_value = 8.0
+max_value = 256.0
+value = 20.0
+rounded = true
+
+[node name="RiverCountLabel" type="Label" parent="Root/Controls/Margin/Column"]
+layout_mode = 2
+text = "River Count"
+
+[node name="RiverCountInput" type="SpinBox" parent="Root/Controls/Margin/Column"]
+unique_name_in_owner = true
+layout_mode = 2
+min_value = 0.0
+max_value = 64.0
+value = 8.0
+rounded = true
+
+[node name="ContinentBiasLabel" type="Label" parent="Root/Controls/Margin/Column"]
+layout_mode = 2
+text = "Continent Bias"
+
+[node name="ContinentBiasInput" type="SpinBox" parent="Root/Controls/Margin/Column"]
+unique_name_in_owner = true
+layout_mode = 2
+min_value = 0.0
+max_value = 2.0
+step = 0.01
+value = 0.42
+
+[node name="ViewModeLabel" type="Label" parent="Root/Controls/Margin/Column"]
+layout_mode = 2
+text = "View"
+
+[node name="ViewModeButton" type="OptionButton" parent="Root/Controls/Margin/Column"]
+unique_name_in_owner = true
+layout_mode = 2
+
+[node name="GenerateButton" type="Button" parent="Root/Controls/Margin/Column"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "生成"
+
+[node name="RandomSeedButton" type="Button" parent="Root/Controls/Margin/Column"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "随机 Seed"
+
+[node name="SummaryLabel" type="Label" parent="Root/Controls/Margin/Column"]
+unique_name_in_owner = true
+layout_mode = 2
+autowrap_mode = 3
+text = "-"
+
+[node name="PreviewPanel" type="PanelContainer" parent="Root"]
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+
+[node name="PreviewMargin" type="MarginContainer" parent="Root/PreviewPanel"]
+layout_mode = 2
+theme_override_constants/margin_left = 12
+theme_override_constants/margin_top = 12
+theme_override_constants/margin_right = 12
+theme_override_constants/margin_bottom = 12
+
+[node name="MapTexture" type="TextureRect" parent="Root/PreviewPanel/PreviewMargin"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+expand_mode = 1
+stretch_mode = 5
+texture_filter = 1

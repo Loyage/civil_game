@@ -6,6 +6,7 @@
 
 - `core.md`
 - `map.md`
+- `map_generator.md`
 - `city.md`
 - `tech.md`
 - `ui.md`

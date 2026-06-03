@@ -34,6 +34,24 @@
 - [x] 实现边界覆盖层
 - [x] 实现 8 邻域、范围查询和动态交通成本
 
+### map_generator
+
+- [x] 创建抽离任务文档
+- [x] 定义 `MapGenerationConfig`
+- [x] 定义 `MapGenerator.generate(config)` 接口
+- [x] 定义 `MapGenerationDebugWriter`
+- [x] 从 `MapLoader` 抽离生成逻辑
+- [x] 从 `MapLoader` 抽离调试输出
+- [ ] 验证抽离前后同 seed 生成一致
+- [x] 实现地图生成器预览场景
+- [x] 实现 seed 输入和重新生成
+- [x] 实现生成视图切换
+- [x] 实现生成参数调节和摘要显示
+- [ ] 实现预览视口右键拖动
+- [ ] 实现预览视口 Ctrl + 滚轮缩放
+- [ ] 实现预览视口左键选择地块
+- [ ] 实现预览选中地块标记和信息显示
+
 ### city
 
 - [ ] 实现城市状态模型

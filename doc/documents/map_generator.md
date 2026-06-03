@@ -1,0 +1,94 @@
+# Map Generator Module Design
+
+`map_generator` 模块负责世界地图生成算法。它从原先的 `MapLoader` 中抽离出来，让配置读取、生成算法和调试输出各自承担清晰职责。
+
+## 当前实现范围
+
+- `MapGenerationConfig` 承载地图生成配置。
+- `MapGenerator.generate(config)` 根据配置生成 `MapState`。
+- `MapGenerationDebugWriter` 负责把生成结果写入调试 JSON。
+- `MapLoader` 保留原有 `load_generated_map()` 入口，但内部只负责读取 JSON、构建配置、调用生成器和触发调试输出。
+- 新增独立开发场景 `MapGeneratorPreview.tscn`，用于输入 seed 和参数后预览生成结果。
+
+## 文件结构
+
+| 文件 | 职责 |
+| --- | --- |
+| `game/scripts/map_generation/map_generation_config.gd` | 地图生成配置对象，保存 seed、尺寸、阈值、生成参数和起始城市。 |
+| `game/scripts/map_generation/map_generator.gd` | 世界地图生成器，生成环境场、河流、地貌派生和渲染辅助路径。 |
+| `game/scripts/map_generation/map_generation_debug_writer.gd` | 调试输出写入器，负责写出 `user://generated_map.json`。 |
+| `game/scenes/dev/MapGeneratorPreview.tscn` | 开发期地图生成器预览场景。 |
+| `game/scripts/dev/map_generator_preview.gd` | 预览场景脚本，调用正式 `MapGenerator.generate(config)` 并渲染预览图。 |
+
+## 数据流
+
+正式游戏流程：
+
+```text
+MapRoot
+  -> MapLoader.load_generated_map()
+      -> MapGenerationConfig.load_from_dictionary(raw_config)
+      -> MapGenerator.generate(config)
+      -> MapGenerationDebugWriter.write_generated_map(config, map_state)
+```
+
+开发预览流程：
+
+```text
+MapGeneratorPreview
+  -> MapGenerationConfig
+  -> MapGenerator.generate(config)
+  -> ImageTexture preview
+```
+
+预览工具不复制生成逻辑，不进入正式游戏流程，也不影响 `MapRoot`。
+
+## 预览工具
+
+预览工具位于：
+
+```text
+game/scenes/dev/MapGeneratorPreview.tscn
+```
+
+首版支持：
+
+- 输入 seed。
+- 输入 width / height。
+- 调整 `river_count`。
+- 调整 `continent_bias`。
+- 点击“生成”重新生成地图。
+- 点击“随机 Seed”生成随机种子并刷新。
+- 切换视图：
+  - 基础地貌
+  - 海拔
+  - 降水
+  - 温度
+  - 河流
+  - 特征
+- 显示摘要：
+  - 海洋比例
+  - 山脉比例
+  - 森林比例
+  - 河流地块数量
+  - 平均海拔
+
+## 边界
+
+`MapGenerator` 不依赖：
+
+- Godot 场景节点。
+- `TileMapLayer`。
+- overlay 绘制脚本。
+- UI 面板。
+- 存档系统。
+
+生成器可以生成服务于渲染的辅助数据，例如 `river_path_points` 和 `ridge_path_points`，但不直接执行绘制。
+
+## 当前限制
+
+- 尚未实现 `MapGenerationValues` 中间结构，环境场仍使用临时 Dictionary。
+- 尚未做抽离前后同 seed 地图摘要的自动回归测试。
+- 预览工具暂不支持 PNG 导出。
+- 预览工具暂不支持参数 preset。
+- 预览工具暂不支持同屏对比。

@@ -20,7 +20,10 @@
 | 文件 | 职责 |
 | --- | --- |
 | `game/data/maps/map_generation_config.json` | 地图生成配置，包含尺寸、种子、生成参数、起始城市位置等。 |
-| `game/scripts/map/map_loader.gd` | 从配置生成 `MapState`，并把生成结果写入 `user://generated_map.json`。 |
+| `game/scripts/map/map_loader.gd` | 读取地图生成配置，调用 `MapGenerator`，并触发调试输出写入。 |
+| `game/scripts/map_generation/map_generation_config.gd` | 地图生成配置对象，承载 seed、尺寸、阈值和生成参数。 |
+| `game/scripts/map_generation/map_generator.gd` | 世界地图生成器，把 `MapGenerationConfig` 转换为 `MapState`。 |
+| `game/scripts/map_generation/map_generation_debug_writer.gd` | 将生成结果写入 `user://generated_map.json` 等调试输出。 |
 | `game/scripts/map/map_state.gd` | 地图运行时状态，保存宽高、地块字典、起始城市等。 |
 | `game/scripts/map/tile_state.gd` | 单个地块的数据结构，保存基础地形、环境字段、特征和河流信息。 |
 | `game/scripts/map/grid_layout.gd` | 方形格坐标与像素位置转换。 |
@@ -56,7 +59,7 @@
 
 ## 地图生成流程
 
-地图生成入口是 `MapLoader.load_generated_map()`。它读取 `map_generation_config.json`，生成一个 `MapState`，并把结果写入 `user://generated_map.json`，方便调试和复现。
+地图生成入口仍是 `MapLoader.load_generated_map()`。`MapLoader` 读取 `map_generation_config.json` 后构建 `MapGenerationConfig`，调用 `MapGenerator.generate(config)` 生成 `MapState`，再通过 `MapGenerationDebugWriter` 写入 `user://generated_map.json`，方便调试和复现。
 
 当前生成流程如下：
 
