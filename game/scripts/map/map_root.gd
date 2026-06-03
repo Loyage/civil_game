@@ -5,6 +5,7 @@ const MapLoaderScript := preload("res://game/scripts/map/map_loader.gd")
 const MapQueryServiceScript := preload("res://game/scripts/map/map_query_service.gd")
 const MapInputControllerScript := preload("res://game/scripts/map/map_input_controller.gd")
 const GridLayoutScript := preload("res://game/scripts/map/grid_layout.gd")
+const MapCameraControllerScript := preload("res://game/scripts/map/map_camera_controller.gd")
 
 const TERRAIN_ATLAS := {
 	"grassland": Vector2i(0, 0),
@@ -20,6 +21,7 @@ const TERRAIN_ATLAS := {
 @onready var river_overlay: Node2D = $RiverOverlay
 @onready var selection_overlay: Node2D = $SelectionOverlay
 @onready var city_marker_layer: Node2D = $CityMarkerLayer
+@onready var map_camera: Camera2D = $MapCamera
 
 var map_state
 var query_service
@@ -28,14 +30,15 @@ var input_controller
 func _ready() -> void:
 	map_state = MapLoaderScript.new().load_generated_map()
 	query_service = MapQueryServiceScript.new(map_state)
-	input_controller = MapInputControllerScript.new(map_state, terrain_layer)
+	input_controller = MapInputControllerScript.new(map_state, terrain_layer, map_camera)
 	_setup_tile_set()
 	_render_terrain()
 	_setup_overlays()
+	_setup_camera()
 
 func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and event.pressed:
-		var tile = input_controller.tile_from_global_position(event.global_position)
+		var tile = input_controller.tile_from_screen_position(event.position)
 		if tile != null:
 			selection_overlay.set_selected_tile(tile.tile_key)
 
@@ -93,3 +96,10 @@ func _setup_overlays() -> void:
 
 	city_marker_layer.set_city_tile(map_state.start_city_tile_key)
 	selection_overlay.set_selected_tile(map_state.start_city_tile_key)
+
+func _setup_camera() -> void:
+	var map_pixel_size := Vector2(
+		float(map_state.width * GridLayoutScript.TILE_PIXEL_SIZE.x),
+		float(map_state.height * GridLayoutScript.TILE_PIXEL_SIZE.y)
+	)
+	map_camera.setup(map_pixel_size)

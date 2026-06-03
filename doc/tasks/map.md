@@ -12,6 +12,8 @@
 - 使用海拔、降水、温度和起伏派生草地、平原、荒漠、苔原、森林、丘陵、河流、海洋、山脉、湖泊、沼泽
 - 支持地块选中与信息查询
 - 支持城市边界高亮
+- 支持右键拖拽平移地图视图
+- 支持按住 Ctrl 后使用滚轮缩放地图视图
 - 支持周围 8 格邻接和动态交通成本计算
 - 为未来扩展迷雾、单位、随机地图保留结构
 
@@ -25,6 +27,7 @@
 - 正方形网格邻接关系查询
 - 相邻地块交通成本计算
 - 渲染地形与覆盖层
+- 地图查看相机的平移与缩放
 - 对外提供地块查询接口
 
 ### 不负责
@@ -147,10 +150,21 @@ var tiles_by_key: Dictionary
 ### 选中地块流程
 
 1. 玩家点击地图。
-2. `MapInputController` 计算点击位置对应的地块。
-3. 更新当前 `selected_tile_key`。
-4. 发出 `selected_tile_changed`。
-5. `ui` 刷新地块信息面板。
+2. `MapInputController` 通过当前画布变换将屏幕坐标转换为 `Camera2D` 缩放/平移后的世界坐标。
+3. `MapInputController` 再将世界坐标转换为 `TileMapLayer` 局部坐标和地图格坐标。
+4. 更新当前 `selected_tile_key`。
+5. 发出 `selected_tile_changed`。
+6. `ui` 刷新地块信息面板。
+
+### 地图查看交互流程
+
+1. `MapCameraController` 作为 `Camera2D` 管理地图视图。
+2. 玩家按住鼠标右键拖拽时，地图内容跟随鼠标拖拽方向移动。
+3. 相机位置被限制在地图像素范围内，不允许拖出地图边界。
+4. 玩家按住 Ctrl 并滚动鼠标滚轮时，以鼠标当前位置为中心缩放。
+5. 缩放范围为 `0.25x ~ 3.0x`。
+6. 单次滚轮缩放倍率约为 `10%`。
+7. 未按 Ctrl 时滚轮输入不触发地图交互。
 
 ### 邻居查询流程
 
@@ -178,6 +192,7 @@ game/scripts/map/offset_coord.gd
 game/scripts/map/grid_layout.gd
 game/scripts/map/map_query_service.gd
 game/scripts/map/map_input_controller.gd
+game/scripts/map/map_camera_controller.gd
 ```
 
 建议职责：
@@ -192,7 +207,11 @@ game/scripts/map/map_input_controller.gd
 - `map_query_service.gd`
   - 8 邻域、范围查询和动态交通成本计算
 - `map_input_controller.gd`
-  - 鼠标点击和选中逻辑
+  - 基于当前相机视图的鼠标点击和选中逻辑
+- `map_camera_controller.gd`
+  - 右键拖拽平移
+  - Ctrl + 滚轮缩放
+  - 地图边界限制
 
 ## 输入输出
 
@@ -209,6 +228,7 @@ game/scripts/map/map_input_controller.gd
 - 当前选中的 `tile_key`
 - 可供 `city` 使用的邻居/范围查询接口
 - 可供 `ui` 读取的地块显示数据
+- 平移/缩放后的地图查看视图
 
 ## 依赖关系
 
@@ -250,3 +270,7 @@ game/scripts/map/map_input_controller.gd
 - [x] 实现城市标记层
 - [x] 实现 `MapQueryService`
 - [x] 实现 `MapInputController`
+- [x] 实现 `Camera2D` 地图查看控制器
+- [x] 实现右键拖拽平移
+- [x] 实现 Ctrl + 滚轮缩放
+- [x] 实现地图视图边界限制

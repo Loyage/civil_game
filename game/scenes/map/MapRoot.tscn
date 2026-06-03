@@ -1,7 +1,8 @@
-[gd_scene load_steps=3 format=3 uid="uid://civilization_map_root"]
+[gd_scene load_steps=4 format=3 uid="uid://civilization_map_root"]
 
 [ext_resource type="Script" path="res://game/scripts/map/map_root.gd" id="1_map_root"]
 [ext_resource type="Script" path="res://game/scripts/map/map_overlay.gd" id="2_overlay"]
+[ext_resource type="Script" path="res://game/scripts/map/map_camera_controller.gd" id="3_camera"]
 
 [node name="MapRoot" type="Node2D"]
 script = ExtResource("1_map_root")
@@ -27,3 +28,6 @@ mode = "selection"
 [node name="CityMarkerLayer" type="Node2D" parent="."]
 script = ExtResource("2_overlay")
 mode = "city"
+
+[node name="MapCamera" type="Camera2D" parent="."]
+script = ExtResource("3_camera")
