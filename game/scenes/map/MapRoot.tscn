@@ -1,8 +1,10 @@
-[gd_scene load_steps=4 format=3 uid="uid://civilization_map_root"]
+[gd_scene load_steps=6 format=3 uid="uid://civilization_map_root"]
 
 [ext_resource type="Script" path="res://game/scripts/map/map_root.gd" id="1_map_root"]
 [ext_resource type="Script" path="res://game/scripts/map/map_overlay.gd" id="2_overlay"]
 [ext_resource type="Script" path="res://game/scripts/map/map_camera_controller.gd" id="3_camera"]
+[ext_resource type="Script" path="res://game/scripts/map/terrain_detail_overlay.gd" id="4_terrain_detail"]
+[ext_resource type="Script" path="res://game/scripts/map/river_overlay.gd" id="5_river"]
 
 [node name="MapRoot" type="Node2D"]
 script = ExtResource("1_map_root")
@@ -14,12 +16,14 @@ script = ExtResource("2_overlay")
 mode = "border"
 
 [node name="FeatureOverlay" type="Node2D" parent="."]
-script = ExtResource("2_overlay")
-mode = "features"
+script = ExtResource("4_terrain_detail")
 
 [node name="RiverOverlay" type="Node2D" parent="."]
+script = ExtResource("5_river")
+
+[node name="DebugSymbolOverlay" type="Node2D" parent="."]
 script = ExtResource("2_overlay")
-mode = "rivers"
+mode = "features"
 
 [node name="SelectionOverlay" type="Node2D" parent="."]
 script = ExtResource("2_overlay")
@@ -31,3 +35,12 @@ mode = "city"
 
 [node name="MapCamera" type="Camera2D" parent="."]
 script = ExtResource("3_camera")
+
+[node name="UILayer" type="CanvasLayer" parent="."]
+
+[node name="RenderToggleButton" type="Button" parent="UILayer"]
+offset_left = 12.0
+offset_top = 12.0
+offset_right = 144.0
+offset_bottom = 44.0
+text = "Texture / Symbol"

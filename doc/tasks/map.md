@@ -14,6 +14,8 @@
 - 支持城市边界高亮
 - 支持右键拖拽平移地图视图
 - 支持按住 Ctrl 后使用滚轮缩放地图视图
+- 支持程序化河流、山脉、丘陵、森林、沼泽、湖泊纹理渲染
+- 支持纹理渲染与选中地块调试符号叠加显示
 - 支持周围 8 格邻接和动态交通成本计算
 - 为未来扩展迷雾、单位、随机地图保留结构
 
@@ -93,6 +95,8 @@ var moisture: float
 var has_river: bool
 var river_flow: Vector2i
 var river_strength: float
+var river_path_points: PackedVector2Array
+var ridge_path_points: PackedVector2Array
 var features: PackedStringArray
 var owner_city_id: String
 var is_city_center: bool
@@ -125,27 +129,41 @@ var tiles_by_key: Dictionary
 6. 根据低海拔和河流汇入派生湖泊。
 7. 根据降水、温度和低洼程度派生荒漠、森林和沼泽。
 8. 创建 `MapState` 和 `TileState` 集合。
-9. 将完整生成结果写入 `generated_output_path`。
-10. 将 `MapState` 交给渲染层显示。
+9. 为河流生成地块内部归一化路径点。
+10. 为山脉生成地块内部归一化脊线路径点。
+11. 将完整生成结果写入 `generated_output_path`。
+12. 将 `MapState` 交给渲染层显示。
 
 ### 地图渲染流程
 
 设计决策：
 
 - 地形底图采用 `TileMapLayer`
-- 选中框、边界、城市标记采用独立覆盖层
+- 河流、地貌细节、调试符号、选中框、边界、城市标记采用独立覆盖层
 
 理由：
 
 - `TileMapLayer` 适合规则性正方形地形绘制
 - 覆盖层独立后，后续边界、路径、选中效果不需要反复改底图
+- 河流、山脉等程序化纹理需要独立于 TileSet 的运行时绘制能力
 
 渲染层建议：
 
 - `TerrainLayer`
+- `RiverOverlay`
+- `FeatureOverlay`
+- `DebugSymbolOverlay`
 - `BorderOverlay`
 - `SelectionOverlay`
 - `CityMarkerLayer`
+
+细节层规则：
+
+- `RiverOverlay` 根据 `river_path_points` 绘制跨格连续河流线条，线宽由 `river_strength` 决定
+- `FeatureOverlay` 根据 `ridge_path_points` 绘制山脉脊线，并绘制丘陵、森林、沼泽、湖泊纹理
+- 远景缩放时只显示基础地形和主河流，近景显示全部细节纹理
+- `DebugSymbolOverlay` 只在选中地块半透明叠加旧符号，用于验证生成结果
+- 左上角 `Texture / Symbol` 按钮控制调试符号层显示
 
 ### 选中地块流程
 
@@ -193,6 +211,8 @@ game/scripts/map/grid_layout.gd
 game/scripts/map/map_query_service.gd
 game/scripts/map/map_input_controller.gd
 game/scripts/map/map_camera_controller.gd
+game/scripts/map/river_overlay.gd
+game/scripts/map/terrain_detail_overlay.gd
 ```
 
 建议职责：
@@ -212,6 +232,12 @@ game/scripts/map/map_camera_controller.gd
   - 右键拖拽平移
   - Ctrl + 滚轮缩放
   - 地图边界限制
+- `river_overlay.gd`
+  - 根据地块内部归一化路径点绘制河流
+  - 根据缩放级别隐藏弱河流
+- `terrain_detail_overlay.gd`
+  - 绘制山脉脊线、丘陵线、森林斑块、沼泽斑块和湖泊水面
+  - 根据缩放级别隐藏细节纹理
 
 ## 输入输出
 
@@ -268,6 +294,15 @@ game/scripts/map/map_camera_controller.gd
 - [x] 实现边界覆盖层
 - [x] 实现选中覆盖层
 - [x] 实现城市标记层
+- [x] 实现河流程序化线条渲染
+- [x] 实现山脉连续脊线渲染
+- [x] 实现丘陵线条纹理
+- [x] 实现森林半透明斑块纹理
+- [x] 实现沼泽半透明斑块纹理
+- [x] 实现湖泊不规则水面斑块
+- [x] 实现远景隐藏细节纹理
+- [x] 实现选中地块调试符号层
+- [x] 实现 `Texture / Symbol` 调试按钮
 - [x] 实现 `MapQueryService`
 - [x] 实现 `MapInputController`
 - [x] 实现 `Camera2D` 地图查看控制器

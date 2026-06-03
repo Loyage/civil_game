@@ -28,7 +28,9 @@
 | `game/scripts/map/map_query_service.gd` | 邻接、范围、距离、交通成本查询。 |
 | `game/scripts/map/map_input_controller.gd` | 鼠标屏幕坐标到地图格坐标的转换，以及选择状态维护。 |
 | `game/scripts/map/map_camera_controller.gd` | 右键拖拽、Ctrl+滚轮缩放、摄像机边界限制。 |
-| `game/scripts/map/map_overlay.gd` | 绘制河流、特征、选中框、边界和城市标记。 |
+| `game/scripts/map/river_overlay.gd` | 根据地块内部路径点绘制跨格连续河流。 |
+| `game/scripts/map/terrain_detail_overlay.gd` | 绘制山脉、丘陵、森林、沼泽和湖泊的程序化纹理。 |
+| `game/scripts/map/map_overlay.gd` | 绘制调试符号、选中框、边界和城市标记。 |
 | `game/scripts/map/map_root.gd` | 地图场景入口，连接生成、渲染、输入、摄像机和 overlay。 |
 | `game/scenes/map/MapRoot.tscn` | 地图场景结构。 |
 
@@ -46,8 +48,11 @@
 
 - 原始环境字段：`elevation`、`rainfall`、`temperature`、`ruggedness`、`moisture`。
 - 推导结果：`terrain_id`、`features`、`has_river`、`river_flow`、`river_strength`。
+- 渲染辅助数据：`river_path_points`、`ridge_path_points`。
 
 这种结构允许后续继续扩展，不需要把所有地貌都硬编码成互斥类型。例如一个地块可以同时是 `grassland`，带有 `forest`，并且有 `river` 穿过。
+
+`river_path_points` 和 `ridge_path_points` 使用地块内部归一化坐标，范围为 `0.0` 到 `1.0`。这样渲染层可以根据当前 tile 像素尺寸转换为实际绘制坐标，同时不会把逻辑数据绑定到具体分辨率。
 
 ## 地图生成流程
 
@@ -61,7 +66,9 @@
 4. 基于海拔和扰动值生成降水、温度、起伏度和湿度。
 5. 从高海拔点生成河流，让水流沿低处扩展。
 6. 根据环境字段推导基础地形和附加特征。
-7. 创建起始城市标记，并写入生成结果文件。
+7. 为河流生成地块内部路径点。
+8. 为相邻山地生成连续脊线路径点。
+9. 创建起始城市标记，并写入生成结果文件。
 
 生成结果依赖种子，因此同一配置可以生成稳定地图。
 
@@ -93,7 +100,9 @@
 | `swamp` | 高湿度、低洼或有河流影响的陆地区域。 |
 | `forest` | 湿润陆地，且不在高山区域。 |
 
-河流不是边缘属性，而是地块内部属性，由 `has_river` 和 `river_flow` 表示。这样后续进入局部地图时，可以在该地块内部生成实际河道。
+河流不是边缘属性，而是地块内部属性，由 `has_river`、`river_flow` 和 `river_path_points` 表示。这样后续进入局部地图时，可以在该地块内部生成实际河道。
+
+湖泊地块中的河流线只进入湖泊中心，不继续穿过湖面。湖泊本身由地貌纹理层绘制为不规则水面斑块。
 
 ## 交通与邻接
 
@@ -123,20 +132,29 @@
 
 地图场景使用 `MapRoot.tscn` 作为入口。`MapRoot` 负责把 `MapState` 渲染到 Godot 节点上。
 
-当前渲染分两层：
+当前渲染分为多个层：
 
 - `TileMapLayer`：绘制基础地形底色。
-- `MapOverlay`：绘制不适合放入 TileSet 的动态信息。
+- `RiverOverlay`：绘制河流线条。
+- `FeatureOverlay`：绘制山脉、丘陵、森林、沼泽、湖泊纹理。
+- `DebugSymbolOverlay`：只在选中地块显示旧版符号，用于调试。
+- `MapOverlay`：继续绘制选中框、城市标记和边界等简单覆盖信息。
 
 `TileMapLayer` 的 TileSet 目前由代码在运行时创建，用简单颜色区分基础地形。这符合当前原型阶段的目标：先验证地图生成和交互逻辑，不提前投入美术资产。
 
-`MapOverlay` 使用 `_draw()` 绘制以下内容：
+`RiverOverlay` 使用 `river_path_points` 绘制地块内部曲线。路径点是归一化坐标，会在绘制时转换为 tile 本地像素位置。线宽由 `river_strength` 决定，远景缩放时只显示较强的主河流。
 
-- 河流线条。
-- 山脉、丘陵、森林、沼泽、湖泊等地块特征标记。
-- 当前选中地块。
-- 地图边界。
-- 起始城市标记。
+`FeatureOverlay` 使用程序化图形表达多种地貌：
+
+- 山脉根据 `ridge_path_points` 绘制跨格连续脊线，并叠加浅色高光。
+- 丘陵用短弧线表现起伏。
+- 森林用半透明绿色斑块表现植被覆盖。
+- 沼泽用蓝绿色半透明斑块表现湿地。
+- 湖泊用不规则蓝色水面斑块表现。
+
+远景缩放时，细节纹理会隐藏，只保留基础地形和主河流。当前阈值硬编码在 overlay 脚本中，后续如果需要频繁调参，再迁移到配置文件。
+
+左上角 `Texture / Symbol` 按钮用于切换调试符号层。默认显示纹理和选中地块旧符号，点击后只显示新纹理。
 
 这种拆分让基础地形和动态信息保持独立。后续替换正式 TileSet 或加入更多调试层时，不需要重写地图状态逻辑。
 
@@ -185,10 +203,11 @@
 
 - 还没有进入单个地块后的局部地图生成。
 - 地形视觉仍是程序生成的简单色块和 overlay 标记，不是正式美术。
+- 河流、山脉、森林、沼泽、湖泊纹理仍是程序化占位美术，不是正式素材。
 - `user://generated_map.json` 是运行时调试输出，不进入仓库版本控制。
 - movement cost 规则仍然较粗糙，还没有道路、桥梁、季节、单位类型等差异。
 - 山脉当前成本很高但仍可通行，未来可以按单位类型或科技条件改成不可通行。
-- terrain 和 feature 的配置仍有一部分写在脚本中，后续应逐步迁移到数据配置。
+- terrain、feature 和渲染阈值的配置仍有一部分写在脚本中，后续应逐步迁移到数据配置。
 
 ## 后续扩展方向
 

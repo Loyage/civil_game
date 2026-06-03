@@ -58,6 +58,7 @@ func _generate_map_state(config: Dictionary):
 
 			map_state.add_tile(tile)
 
+	_build_render_paths(map_state)
 	return map_state
 
 func _generate_base_values(config: Dictionary, seed: int, col: int, row: int, width: int, height: int) -> Dictionary:
@@ -243,6 +244,97 @@ func _directions8() -> Array:
 		Vector2i(1, 1)
 	]
 
+func _build_render_paths(map_state) -> void:
+	for tile in map_state.tiles_by_key.values():
+		if tile.has_river:
+			tile.river_path_points = _river_path_points_for_tile(map_state, tile)
+		if tile.is_mountain():
+			tile.ridge_path_points = _ridge_path_points_for_tile(map_state, tile)
+
+func _river_path_points_for_tile(map_state, tile) -> PackedVector2Array:
+	var points := PackedVector2Array()
+	var incoming_direction := _strongest_incoming_river_direction(map_state, tile)
+	var outgoing_direction: Vector2i = tile.river_flow
+
+	if incoming_direction != Vector2i.ZERO:
+		points.append(_normalized_edge_point(incoming_direction))
+	else:
+		points.append(Vector2(0.5, 0.5))
+
+	points.append(_normalized_river_midpoint(tile))
+
+	if not tile.is_lake() and outgoing_direction != Vector2i.ZERO:
+		points.append(_normalized_edge_point(outgoing_direction))
+
+	return points
+
+func _strongest_incoming_river_direction(map_state, tile) -> Vector2i:
+	var best_direction := Vector2i.ZERO
+	var best_strength := -1.0
+	for direction in _directions8():
+		var neighbor = map_state.get_tile_by_offset(tile.offset.col + direction.x, tile.offset.row + direction.y)
+		if neighbor == null or not neighbor.has_river:
+			continue
+		if neighbor.river_flow != -direction:
+			continue
+		if neighbor.river_strength > best_strength:
+			best_strength = neighbor.river_strength
+			best_direction = direction
+	return best_direction
+
+func _ridge_path_points_for_tile(map_state, tile) -> PackedVector2Array:
+	var connected_directions: Array[Vector2i] = []
+	for direction in _directions8():
+		var neighbor = map_state.get_tile_by_offset(tile.offset.col + direction.x, tile.offset.row + direction.y)
+		if neighbor == null or not neighbor.is_mountain():
+			continue
+		connected_directions.append(direction)
+
+	if connected_directions.is_empty():
+		return PackedVector2Array([
+			Vector2(0.24, 0.68),
+			Vector2(0.50, 0.26),
+			Vector2(0.76, 0.68)
+		])
+
+	var start_direction: Vector2i = connected_directions[0]
+	var end_direction: Vector2i = connected_directions[0]
+	var best_distance := -1.0
+	for a in connected_directions:
+		for b in connected_directions:
+			var distance := Vector2(a - b).length_squared()
+			if distance > best_distance:
+				best_distance = distance
+				start_direction = a
+				end_direction = b
+
+	return PackedVector2Array([
+		_normalized_edge_point(start_direction),
+		_normalized_ridge_midpoint(tile),
+		_normalized_edge_point(end_direction)
+	])
+
+func _normalized_edge_point(direction: Vector2i) -> Vector2:
+	var vector := Vector2(direction)
+	if vector == Vector2.ZERO:
+		return Vector2(0.5, 0.5)
+	vector = vector.normalized()
+	return Vector2(0.5, 0.5) + vector * 0.47
+
+func _normalized_river_midpoint(tile) -> Vector2:
+	var bend := _value_noise(19, tile.offset.col, tile.offset.row, 21) - 0.5
+	return Vector2(
+		clampf(0.5 + bend * 0.18, 0.34, 0.66),
+		clampf(0.5 - bend * 0.12, 0.34, 0.66)
+	)
+
+func _normalized_ridge_midpoint(tile) -> Vector2:
+	var bend := _value_noise(23, tile.offset.col, tile.offset.row, 22) - 0.5
+	return Vector2(
+		clampf(0.5 + bend * 0.16, 0.30, 0.70),
+		clampf(0.5 - tile.elevation * 0.14, 0.22, 0.58)
+	)
+
 func _write_generated_map(config: Dictionary, map_state) -> void:
 	var path := String(config.get("generated_output_path", "user://generated_map.json"))
 	var file := FileAccess.open(path, FileAccess.WRITE)
@@ -263,6 +355,8 @@ func _write_generated_map(config: Dictionary, map_state) -> void:
 			"has_river": tile.has_river,
 			"river_flow": [tile.river_flow.x, tile.river_flow.y],
 			"river_strength": tile.river_strength,
+			"river_path_points": _serialize_vector2_array(tile.river_path_points),
+			"ridge_path_points": _serialize_vector2_array(tile.ridge_path_points),
 			"features": Array(tile.features)
 		})
 	file.store_string(JSON.stringify({
@@ -275,3 +369,9 @@ func _write_generated_map(config: Dictionary, map_state) -> void:
 
 func _point_key(col: int, row: int) -> String:
 	return GridLayoutScript.tile_key(col, row)
+
+func _serialize_vector2_array(points: PackedVector2Array) -> Array:
+	var serialized: Array = []
+	for point in points:
+		serialized.append([point.x, point.y])
+	return serialized

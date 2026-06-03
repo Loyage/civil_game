@@ -12,6 +12,8 @@ var moisture: float
 var has_river: bool
 var river_flow: Vector2i
 var river_strength: float
+var river_path_points: PackedVector2Array
+var ridge_path_points: PackedVector2Array
 var features: PackedStringArray
 var owner_city_id: String
 var is_city_center: bool
@@ -32,6 +34,8 @@ func _init(
 	has_river = false
 	river_flow = Vector2i.ZERO
 	river_strength = 0.0
+	river_path_points = PackedVector2Array()
+	ridge_path_points = PackedVector2Array()
 	features = PackedStringArray()
 	owner_city_id = ""
 	is_city_center = false

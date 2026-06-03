@@ -19,13 +19,16 @@ const TERRAIN_ATLAS := {
 @onready var border_overlay: Node2D = $BorderOverlay
 @onready var feature_overlay: Node2D = $FeatureOverlay
 @onready var river_overlay: Node2D = $RiverOverlay
+@onready var debug_symbol_overlay: Node2D = $DebugSymbolOverlay
 @onready var selection_overlay: Node2D = $SelectionOverlay
 @onready var city_marker_layer: Node2D = $CityMarkerLayer
 @onready var map_camera: Camera2D = $MapCamera
+@onready var render_toggle_button: Button = $UILayer/RenderToggleButton
 
 var map_state
 var query_service
 var input_controller
+var show_debug_symbols := true
 
 func _ready() -> void:
 	map_state = MapLoaderScript.new().load_generated_map()
@@ -35,12 +38,18 @@ func _ready() -> void:
 	_render_terrain()
 	_setup_overlays()
 	_setup_camera()
+	_setup_ui()
 
 func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and event.pressed:
 		var tile = input_controller.tile_from_screen_position(event.position)
 		if tile != null:
 			selection_overlay.set_selected_tile(tile.tile_key)
+			debug_symbol_overlay.set_selected_tile(tile.tile_key)
+
+func _process(_delta: float) -> void:
+	feature_overlay.queue_redraw()
+	river_overlay.queue_redraw()
 
 func _setup_tile_set() -> void:
 	var tile_set := TileSet.new()
@@ -91,11 +100,17 @@ func _render_terrain() -> void:
 		terrain_layer.set_cell(tile.offset.to_vector(), 0, atlas_coord, 0)
 
 func _setup_overlays() -> void:
-	for overlay in [border_overlay, feature_overlay, river_overlay, selection_overlay, city_marker_layer]:
-		overlay.setup(map_state, terrain_layer, overlay.mode)
+	border_overlay.setup(map_state, terrain_layer, border_overlay.mode)
+	feature_overlay.setup(map_state, terrain_layer, map_camera)
+	river_overlay.setup(map_state, terrain_layer, map_camera)
+	debug_symbol_overlay.setup(map_state, terrain_layer, debug_symbol_overlay.mode)
+	selection_overlay.setup(map_state, terrain_layer, selection_overlay.mode)
+	city_marker_layer.setup(map_state, terrain_layer, city_marker_layer.mode)
 
 	city_marker_layer.set_city_tile(map_state.start_city_tile_key)
 	selection_overlay.set_selected_tile(map_state.start_city_tile_key)
+	debug_symbol_overlay.set_selected_tile(map_state.start_city_tile_key)
+	_apply_debug_symbol_visibility()
 
 func _setup_camera() -> void:
 	var map_pixel_size := Vector2(
@@ -103,3 +118,18 @@ func _setup_camera() -> void:
 		float(map_state.height * GridLayoutScript.TILE_PIXEL_SIZE.y)
 	)
 	map_camera.setup(map_pixel_size)
+
+func _setup_ui() -> void:
+	render_toggle_button.text = _render_toggle_text()
+	render_toggle_button.pressed.connect(_toggle_debug_symbols)
+
+func _toggle_debug_symbols() -> void:
+	show_debug_symbols = not show_debug_symbols
+	_apply_debug_symbol_visibility()
+
+func _apply_debug_symbol_visibility() -> void:
+	debug_symbol_overlay.set_debug_symbols_visible(show_debug_symbols)
+	render_toggle_button.text = _render_toggle_text()
+
+func _render_toggle_text() -> String:
+	return "Texture / Symbol"
