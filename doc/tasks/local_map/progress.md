@@ -12,6 +12,7 @@
 - `LocalMapRoot` 根节点已改为 `CanvasLayer`，避免被大地图 `Camera2D` 平移/缩放后导致纹理不在屏幕内。
 - 小地图支持右键拖动视图，以及按住 Ctrl 后滚轮缩放。
 - 小地图支持左键选中地格、悬停预览和选中标记，左下角 UI 在小地图模式显示选中地格信息。
+- `MapGeneratorPreview` 可以复用 `LocalMapGenerator` 直接生成选中地块的小地图预览；该开发工具入口不走小地图缓存。
 - HUD 在小地图模式显示“返回大地图”按钮。
 - 小地图使用 `tile_col * 255 + cell_x` / `tile_row * 255 + cell_y` 全局采样坐标，保证相邻地块共享边界高度一致。
 

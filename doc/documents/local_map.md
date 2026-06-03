@@ -49,6 +49,8 @@ global_cell_y = tile_row * 255 + cell_y
 
 左下角 UI 在小地图模式切换为“地格信息”。进入小地图后默认未选择地格；玩家在小地图视口内左键点击地格后，`LocalMapRoot` 发出 `local_cell_selected(cell_info)`，`CoreRoot` 转发给 `UIRoot`，面板显示地格坐标、全局坐标、高度、水体、河流和坡度。悬停只更新预览标记，不改变面板内容。
 
+`MapGeneratorPreview` 也可以查看小地图。该开发工具入口直接调用 `LocalMapGenerator`，不使用 `LocalMapService`，因此不会读取或写入缓存，适合快速查看当前 seed 和选中大地图地块对应的小地图样式。
+
 ## 当前限制
 
 - 小地图地格信息面板尚未实现。
