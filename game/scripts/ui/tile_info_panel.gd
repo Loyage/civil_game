@@ -48,6 +48,28 @@ func show_empty() -> void:
 	river_label.text = "河流：-"
 	environment_label.text = "海拔 -  降水 -\n温度 -  起伏 -"
 
+func show_local_cell_empty(tile_key: String) -> void:
+	title_label.text = "地格信息"
+	coord_label.text = "地格：未选择"
+	terrain_label.text = "全局坐标：-"
+	features_label.text = "所属地块：%s" % tile_key
+	river_label.text = "水体：-  河流：-"
+	environment_label.text = "高度 -  坡度 -"
+
+func show_local_cell(cell_info: Dictionary) -> void:
+	title_label.text = "地格信息"
+	coord_label.text = "地格：%d, %d" % [int(cell_info.get("x", 0)), int(cell_info.get("y", 0))]
+	terrain_label.text = "全局坐标：%d, %d" % [int(cell_info.get("global_x", 0)), int(cell_info.get("global_y", 0))]
+	features_label.text = "所属地块：%s" % String(cell_info.get("tile_key", ""))
+	river_label.text = "水体：%s  河流：%s" % [
+		"是" if bool(cell_info.get("is_water", false)) else "否",
+		"是" if bool(cell_info.get("has_river", false)) else "否"
+	]
+	environment_label.text = "高度 %d  坡度 %d" % [
+		int(cell_info.get("height", 0)),
+		int(cell_info.get("slope", 0))
+	]
+
 func _feature_text(features: PackedStringArray) -> String:
 	if features.is_empty():
 		return "无"

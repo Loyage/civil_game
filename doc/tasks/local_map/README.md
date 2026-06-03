@@ -74,13 +74,13 @@ doc/tasks/local_map/progress.md
 
 ## Checklist
 
-- [ ] 创建 `LocalMapState` 设计
+- [x] 创建 `LocalMapState` 设计
 - [ ] 创建 `LocalCellState` 设计
-- [ ] 设计小地图缓存协议
-- [ ] 设计小地图种子推导规则
-- [ ] 设计全局高度采样算法
-- [ ] 设计河流入口/出口约束
-- [ ] 设计 `LocalMapRoot.tscn`
-- [ ] 设计大地图进入小地图流程
-- [ ] 设计返回大地图流程
+- [x] 设计小地图缓存协议
+- [x] 设计小地图种子推导规则
+- [x] 设计全局高度采样算法
+- [x] 设计河流入口/出口约束
+- [x] 设计 `LocalMapRoot.tscn`
+- [x] 设计大地图进入小地图流程
+- [x] 设计返回大地图流程
 - [ ] 设计验证方案

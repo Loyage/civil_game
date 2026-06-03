@@ -62,6 +62,10 @@ HUD 横贯屏幕顶部，当前显示：
 
 `Texture / Symbol` 按钮可用。点击后，`HudBar` 发出 `debug_symbols_toggle_requested`，`UIRoot` 转发给 `CoreRoot`，再由 `CoreRoot` 调用 `MapRoot.toggle_debug_symbols()`。
 
+进入局部地图后，HUD 会隐藏 `Texture / Symbol`，显示“返回大地图”按钮。点击后由 `UIRoot` 发出 `return_to_world_requested`，`CoreRoot` 负责恢复大地图显示。
+
+局部地图模式下，左下角信息面板从“地块信息”切换为“地格信息”。默认显示未选择状态；玩家左键点击小地图视口中的地格后，面板显示地格坐标、全局坐标、高度、水体、河流和坡度。鼠标悬停只用于小地图内预览标记，不更新该面板。
+
 ## 地块信息面板
 
 地块信息面板位于左下角，尺寸约 `420 x 240`。当启动游戏时，默认展示起始城市地块；点击地图后实时刷新。

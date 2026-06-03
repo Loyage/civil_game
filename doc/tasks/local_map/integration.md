@@ -42,10 +42,10 @@ CoreRoot
 
 ## 返回流程
 
-首版需要返回按钮：
+首版返回按钮已放在 HUD：
 
-1. 玩家点击返回大地图按钮。
-2. `LocalMapRoot` 或 `UIRoot` 发出返回请求。
+1. 玩家点击 HUD 的返回大地图按钮。
+2. `UIRoot` 发出返回请求。
 3. `CoreRoot` 隐藏小地图。
 4. `CoreRoot` 恢复大地图显示。
 5. 大地图保留进入前的相机位置、缩放和选中地块。
@@ -68,24 +68,28 @@ CoreRoot
 
 ## 与 UI 关系
 
-UI 需要后续新增：
+UI 当前已接入：
 
-- 进入地块提示或按钮状态
 - 小地图返回按钮
 - 当前视图模式显示：大地图 / 小地图
 - 小地图地格信息面板
+
+UI 后续仍可新增：
+
+- 进入地块提示或按钮状态
+- 小地图地格更多派生字段
 
 但首版确认进入方式是双击，因此进入小地图不依赖按钮。
 
 ## Checklist
 
-- [ ] 设计 `tile_enter_requested(tile)` 信号
-- [ ] 设计双击检测流程
-- [ ] 设计 `CoreRoot` 大地图/小地图切换流程
-- [ ] 设计 `LocalMapService.load_or_generate(tile)` 接口
-- [ ] 设计缓存存在时的加载流程
-- [ ] 设计缓存不存在时的生成流程
-- [ ] 设计 `LocalMapRoot` 接收 `LocalMapState` 的接口
-- [ ] 设计返回大地图按钮和信号
-- [ ] 设计保留大地图相机状态
-- [ ] 设计小地图地格信息 UI 后续入口
+- [x] 设计 `tile_enter_requested(tile)` 信号
+- [x] 设计双击检测流程
+- [x] 设计 `CoreRoot` 大地图/小地图切换流程
+- [x] 设计 `LocalMapService.load_or_generate(tile)` 接口
+- [x] 设计缓存存在时的加载流程
+- [x] 设计缓存不存在时的生成流程
+- [x] 设计 `LocalMapRoot` 接收 `LocalMapState` 的接口
+- [x] 设计返回大地图按钮和信号
+- [x] 设计保留大地图相机状态
+- [x] 设计小地图地格信息 UI 后续入口

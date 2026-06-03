@@ -1,12 +1,15 @@
-[gd_scene load_steps=4 format=3 uid="uid://civilization_main"]
+[gd_scene load_steps=5 format=3 uid="uid://civilization_main"]
 
 [ext_resource type="PackedScene" path="res://game/scenes/map/MapRoot.tscn" id="1_map_root"]
 [ext_resource type="Script" path="res://game/scripts/core/core_root.gd" id="2_core_root"]
 [ext_resource type="PackedScene" path="res://game/scenes/ui/UIRoot.tscn" id="3_ui_root"]
+[ext_resource type="PackedScene" path="res://game/scenes/local_map/LocalMapRoot.tscn" id="4_local_map_root"]
 
 [node name="Main" type="Node2D"]
 script = ExtResource("2_core_root")
 
 [node name="MapRoot" parent="." instance=ExtResource("1_map_root")]
+
+[node name="LocalMapRoot" parent="." instance=ExtResource("4_local_map_root")]
 
 [node name="UIRoot" parent="." instance=ExtResource("3_ui_root")]

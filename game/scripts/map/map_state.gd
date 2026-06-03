@@ -3,6 +3,7 @@ extends RefCounted
 
 var width: int
 var height: int
+var world_seed: int
 var tiles_by_key: Dictionary
 var keys_by_offset: Dictionary
 var start_city_tile_key: String
@@ -11,6 +12,7 @@ var start_city_name: String
 func _init(init_width: int = 0, init_height: int = 0) -> void:
 	width = init_width
 	height = init_height
+	world_seed = 0
 	tiles_by_key = {}
 	keys_by_offset = {}
 	start_city_tile_key = ""

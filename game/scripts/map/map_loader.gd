@@ -32,6 +32,7 @@ func _generate_map_state(config: Dictionary):
 	var height := int(config.get("height", 20))
 	var seed := int(config.get("seed", Time.get_unix_time_from_system()))
 	var map_state = MapStateScript.new(width, height)
+	map_state.world_seed = seed
 	var start_city: Dictionary = config.get("start_city", {})
 	var start_col := int(start_city.get("col", 0))
 	var start_row := int(start_city.get("row", 0))

@@ -2,6 +2,7 @@ class_name MapRoot
 extends Node2D
 
 signal tile_selected(tile)
+signal tile_enter_requested(tile)
 
 const MapLoaderScript := preload("res://game/scripts/map/map_loader.gd")
 const MapQueryServiceScript := preload("res://game/scripts/map/map_query_service.gd")
@@ -46,6 +47,8 @@ func _unhandled_input(event: InputEvent) -> void:
 		var tile = input_controller.tile_from_screen_position(event.position)
 		if tile != null:
 			select_tile(tile)
+			if event.double_click:
+				tile_enter_requested.emit(tile)
 
 func _process(_delta: float) -> void:
 	feature_overlay.queue_redraw()

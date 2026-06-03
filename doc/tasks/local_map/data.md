@@ -53,10 +53,10 @@ var slope: int
 
 ## 缓存策略
 
-缓存位置：
+缓存位置已实现为：
 
 ```text
-user://local_maps/{seed}/{tile_key}.json
+user://local_maps/{seed}/v{version}/{tile_key}.bin
 ```
 
 缓存加载流程：
@@ -69,7 +69,7 @@ user://local_maps/{seed}/{tile_key}.json
 
 ## 缓存内容
 
-缓存需要包含：
+缓存当前包含：
 
 - 版本号
 - 世界种子
@@ -85,15 +85,13 @@ user://local_maps/{seed}/{tile_key}.json
 
 ## 存储格式
 
-高度数组首版规划为二进制或压缩格式，具体格式后续实现时定。
+首版已采用 Godot `FileAccess` 二进制写入：
 
-JSON 二维数组可读性高但体积过大，不适合 `65536` 个地格长期使用。JSON 一维数组也仍然偏大。最终应优先考虑：
+- 文件头写入 `CLM1` magic。
+- 后续写入 `CACHE_VERSION`。
+- 主体使用 `store_var()` 写入 Dictionary，包含 `PackedInt32Array` 与 `PackedByteArray`。
 
-- `PackedInt32Array` 序列化
-- `PackedByteArray` 压缩
-- 或 Godot 原生 `FileAccess` 二进制写入
-
-当前文档只规划格式目标，不实现代码。
+这样保留二进制缓存方向，同时避免手写有符号整数数组读写导致负高度歧义。
 
 ## 缓存版本
 
@@ -109,17 +107,17 @@ config_hash: string
 
 - 不删除旧缓存
 - 忽略旧缓存
-- 写入新版本目录或带版本标记的新缓存
+- 写入新版本目录：`v{version}`
 
 ## Checklist
 
-- [ ] 设计 `LocalMapState`
+- [x] 设计 `LocalMapState`
 - [ ] 设计临时查询用 `LocalCellState`
-- [ ] 设计一维索引规则
-- [ ] 设计缓存路径规则
-- [ ] 设计缓存版本字段
+- [x] 设计一维索引规则
+- [x] 设计缓存路径规则
+- [x] 设计缓存版本字段
 - [ ] 设计生成配置摘要字段
-- [ ] 设计高度数组存储格式
-- [ ] 设计 water/river/slope 派生数组
-- [ ] 设计版本不兼容处理流程
-- [ ] 设计缓存读写接口
+- [x] 设计高度数组存储格式
+- [x] 设计 water/river/slope 派生数组
+- [x] 设计版本不兼容处理流程
+- [x] 设计缓存读写接口

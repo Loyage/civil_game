@@ -218,4 +218,10 @@
 - 增加选中地块的信息面板，帮助验证生成结果。
 - 把 movement rule 数据化，支持道路、桥梁和不同移动单位。
 - 增加局部地图生成入口，让世界地块可以展开为独立小地图。
+
+## 局部地图入口
+
+当前已接入基础 `local_map` 流程：玩家双击世界地图地块后，`MapRoot` 发出 `tile_enter_requested(tile)`，由 `CoreRoot` 调用 `LocalMapService.load_or_generate(tile)` 并切换到 `LocalMapRoot`。
+
+大地图节点在进入局部地图时只隐藏不释放，因此返回后相机位置、缩放和选中地块状态会保留。局部地图详细设计见 `doc/documents/local_map.md`。
 - 将当前运行时 TileSet 替换为可维护的资源文件和正式占位素材。

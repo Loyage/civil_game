@@ -41,6 +41,11 @@ unique_name_in_owner = true
 layout_mode = 2
 text = "Texture / Symbol"
 
+[node name="ReturnToWorldButton" type="Button" parent="Margin/Row"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "返回大地图"
+
 [node name="SaveButton" type="Button" parent="Margin/Row"]
 unique_name_in_owner = true
 layout_mode = 2
