@@ -154,7 +154,7 @@
 
 远景缩放时，细节纹理会隐藏，只保留基础地形和主河流。当前阈值硬编码在 overlay 脚本中，后续如果需要频繁调参，再迁移到配置文件。
 
-左上角 `Texture / Symbol` 按钮用于切换调试符号层。默认显示纹理和选中地块旧符号，点击后只显示新纹理。
+调试符号切换入口由 UI 模块提供。`MapRoot` 暴露 `toggle_debug_symbols()`，由上层 `core_root.gd` 在收到 UI 请求后调用。默认显示纹理和选中地块旧符号，切换后只显示新纹理。
 
 这种拆分让基础地形和动态信息保持独立。后续替换正式 TileSet 或加入更多调试层时，不需要重写地图状态逻辑。
 
@@ -174,6 +174,7 @@
 1. 使用 `TileMapLayer.get_canvas_transform().affine_inverse()` 把屏幕坐标转回世界坐标。
 2. 使用 `TileMapLayer.to_local()` 转成 TileMapLayer 本地坐标。
 3. 使用 `TileMapLayer.local_to_map()` 得到格子坐标。
+4. `MapRoot` 更新选中覆盖层，并发出 `tile_selected(tile)`。
 
 这个流程确保缩放后点击选中的仍然是鼠标下方的地块。
 

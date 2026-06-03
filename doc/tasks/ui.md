@@ -8,10 +8,11 @@
 
 - 显示基础 HUD
 - 显示结束回合按钮
-- 显示城市信息面板
-- 显示科技进度面板
+- 暂不显示城市信息面板
+- 暂不显示科技进度面板
 - 显示地块信息面板
 - 支持保存/读档入口
+- 支持地图纹理/调试符号显示切换入口
 
 ## 职责边界
 
@@ -73,23 +74,26 @@ var completed_names: PackedStringArray
 
 ### HUD 初始化流程
 
-1. `GameRoot` 创建 UI 根节点。
-2. `UIRoot` 订阅 `GameEvents`。
-3. 首次读取 `GameState` 并刷新所有面板。
+1. `Main.tscn` 挂载 `core_root.gd`，作为当前临时上层调度节点。
+2. `MapRoot` 和 `UIRoot` 作为同级节点存在。
+3. `MapRoot` 暂时继续负责加载 `MapState`。
+4. `CoreRoot` 从 `MapRoot` 读取起始地块，并调用 `UIRoot.show_tile(tile)` 初始化 UI。
 
 ### 结束回合流程
 
 1. 玩家点击 `结束回合`。
-2. `ui` 发出请求给 `core`。
-3. 在结算期间暂时禁用按钮。
-4. 回合推进完成后刷新所有面板。
+2. 首版按钮禁用，悬停提示“暂未实现”。
+3. 后续实现 core 回合逻辑后，由 `ui` 发出请求给 `core`。
+4. 在结算期间暂时禁用按钮。
+5. 回合推进完成后刷新所有面板。
 
 ### 地块信息刷新流程
 
 1. 玩家点击地图地块。
-2. `map` 发出 `selected_tile_changed`。
-3. `ui` 读取对应 `TileState`。
-4. 刷新地块信息面板。
+2. `MapRoot` 发出 `tile_selected(tile)`。
+3. `CoreRoot` 接收信号。
+4. `CoreRoot` 调用 `UIRoot.show_tile(tile)`。
+5. `UIRoot` 刷新 HUD 中的当前坐标和地块信息面板。
 
 ### 城市信息刷新流程
 
@@ -104,57 +108,53 @@ var completed_names: PackedStringArray
 ```text
 game/scenes/ui/UIRoot.tscn
 game/scenes/ui/HudBar.tscn
-game/scenes/ui/CityPanel.tscn
-game/scenes/ui/TechPanel.tscn
 game/scenes/ui/TileInfoPanel.tscn
-game/scenes/ui/SaveLoadPanel.tscn
 game/scripts/ui/ui_root.gd
 game/scripts/ui/hud_bar.gd
-game/scripts/ui/city_panel.gd
-game/scripts/ui/tech_panel.gd
 game/scripts/ui/tile_info_panel.gd
-game/scripts/ui/save_load_panel.gd
-game/scripts/ui/ui_presenter.gd
+game/scripts/core/core_root.gd
 ```
 
 建议职责：
 
 - `UIRoot.tscn`
-  - 所有 UI 场景的容器
+  - 所有首版 UI 场景的容器
 - `ui_root.gd`
-  - 订阅信号并协调刷新
-- `ui_presenter.gd`
-  - 将业务状态转换为视图数据
-- 各 Panel 脚本
-  - 仅负责绑定控件和渲染文本
+  - 对外暴露 `show_tile(tile)`，转发 HUD 按钮信号
+- `HudBar.tscn`
+  - 顶部横贯全屏 HUD，显示回合、金币、当前选中坐标、保存/读档/结束回合入口和 `Texture / Symbol` 按钮
+- `TileInfoPanel.tscn`
+  - 左下角中等尺寸地块信息卡片
+- `core_root.gd`
+  - 当前临时上层调度脚本，负责连接 `MapRoot` 与 `UIRoot`
 
 ### 推荐布局
 
-- 顶部：回合数、金币、结束回合按钮
-- 左侧：城市信息
-- 右侧：科技进度
-- 底部：地块信息
+- 顶部横条：回合数、金币、当前选中坐标、`Texture / Symbol`、保存、读档、结束回合
+- 左下角浮动卡片：当前地块信息
+- 城市信息、科技进度、保存/读档面板暂不显示，后续对应模块开始实现后再接入
 
 设计决策：
 
 - 首版不追求复杂 UI 动画
 - 优先保证信息读得清楚、交互链路顺畅
+- `map` 和 `ui` 不直接互相依赖，由上层 `core_root.gd` 负责调度通信
 
 ## 输入输出
 
 ### 输入
 
-- `GameState`
 - `MapState`
-- `CityState`
-- `TechState`
-- 来自 `GameEvents` 的状态变化信号
+- `TileState`
+- 来自 `MapRoot` 的 `tile_selected(tile)` 信号
+- 来自 `CoreRoot` 的初始化调用
 
 ### 输出
 
-- `结束回合` 请求
-- `保存` 请求
-- `读档` 请求
+- `结束回合` 请求，当前按钮禁用
+- `保存` 请求，当前按钮禁用
+- `读档` 请求，当前按钮禁用
+- `Texture / Symbol` 调试符号切换请求
 - 未来可扩展的科技切换请求
 
 ## 依赖关系
@@ -175,20 +175,23 @@ game/scripts/ui/ui_presenter.gd
 - 如果 UI 直接依赖底层实现细节，后续状态结构改动会带来大面积修改
 - 如果没有单独的 presenter 层，面板脚本很快会混入业务逻辑
 - 首版虽然功能少，但面板过多时仍可能造成状态同步混乱
+- 如果 `map` 和 `ui` 直接互相引用，后续 core 状态管理会难以收敛
 
 ## 子任务 checklist
 
-- [ ] 创建 `UIRoot.tscn`
-- [ ] 创建 `HudBar.tscn`
+- [x] 创建 `UIRoot.tscn`
+- [x] 创建 `HudBar.tscn`
 - [ ] 创建 `CityPanel.tscn`
 - [ ] 创建 `TechPanel.tscn`
-- [ ] 创建 `TileInfoPanel.tscn`
+- [x] 创建 `TileInfoPanel.tscn`
 - [ ] 创建 `SaveLoadPanel.tscn`
-- [ ] 实现 `ui_root.gd`
+- [x] 实现 `ui_root.gd`
 - [ ] 实现 `ui_presenter.gd`
-- [ ] 实现结束回合按钮联动
+- [x] 实现 HUD 中禁用的结束回合入口
 - [ ] 实现城市信息渲染
 - [ ] 实现科技信息渲染
-- [ ] 实现地块信息渲染
-- [ ] 实现保存/读档入口
+- [x] 实现地块信息渲染
+- [x] 实现 HUD 中禁用的保存/读档入口
 - [ ] 在回合结算时禁用交互按钮
+- [x] 实现 `Texture / Symbol` 地图调试符号切换入口
+- [x] 实现 `CoreRoot` 调度 `MapRoot` 与 `UIRoot`

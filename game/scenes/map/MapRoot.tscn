@@ -35,12 +35,3 @@ mode = "city"
 
 [node name="MapCamera" type="Camera2D" parent="."]
 script = ExtResource("3_camera")
-
-[node name="UILayer" type="CanvasLayer" parent="."]
-
-[node name="RenderToggleButton" type="Button" parent="UILayer"]
-offset_left = 12.0
-offset_top = 12.0
-offset_right = 144.0
-offset_bottom = 44.0
-text = "Texture / Symbol"

@@ -163,7 +163,7 @@ var tiles_by_key: Dictionary
 - `FeatureOverlay` 根据 `ridge_path_points` 绘制山脉脊线，并绘制丘陵、森林、沼泽、湖泊纹理
 - 远景缩放时只显示基础地形和主河流，近景显示全部细节纹理
 - `DebugSymbolOverlay` 只在选中地块半透明叠加旧符号，用于验证生成结果
-- 左上角 `Texture / Symbol` 按钮控制调试符号层显示
+- `Texture / Symbol` 按钮由 `ui` 模块提供，`core_root.gd` 调用 `MapRoot.toggle_debug_symbols()` 执行切换
 
 ### 选中地块流程
 
@@ -171,8 +171,8 @@ var tiles_by_key: Dictionary
 2. `MapInputController` 通过当前画布变换将屏幕坐标转换为 `Camera2D` 缩放/平移后的世界坐标。
 3. `MapInputController` 再将世界坐标转换为 `TileMapLayer` 局部坐标和地图格坐标。
 4. 更新当前 `selected_tile_key`。
-5. 发出 `selected_tile_changed`。
-6. `ui` 刷新地块信息面板。
+5. `MapRoot` 发出 `tile_selected(tile)`。
+6. 上层 `core_root.gd` 接收信号并调度 `ui` 刷新地块信息面板。
 
 ### 地图查看交互流程
 
@@ -302,7 +302,7 @@ game/scripts/map/terrain_detail_overlay.gd
 - [x] 实现湖泊不规则水面斑块
 - [x] 实现远景隐藏细节纹理
 - [x] 实现选中地块调试符号层
-- [x] 实现 `Texture / Symbol` 调试按钮
+- [x] 提供 `MapRoot.toggle_debug_symbols()` 供 UI 调用
 - [x] 实现 `MapQueryService`
 - [x] 实现 `MapInputController`
 - [x] 实现 `Camera2D` 地图查看控制器

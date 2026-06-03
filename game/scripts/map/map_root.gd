@@ -1,6 +1,8 @@
 class_name MapRoot
 extends Node2D
 
+signal tile_selected(tile)
+
 const MapLoaderScript := preload("res://game/scripts/map/map_loader.gd")
 const MapQueryServiceScript := preload("res://game/scripts/map/map_query_service.gd")
 const MapInputControllerScript := preload("res://game/scripts/map/map_input_controller.gd")
@@ -23,7 +25,6 @@ const TERRAIN_ATLAS := {
 @onready var selection_overlay: Node2D = $SelectionOverlay
 @onready var city_marker_layer: Node2D = $CityMarkerLayer
 @onready var map_camera: Camera2D = $MapCamera
-@onready var render_toggle_button: Button = $UILayer/RenderToggleButton
 
 var map_state
 var query_service
@@ -38,14 +39,13 @@ func _ready() -> void:
 	_render_terrain()
 	_setup_overlays()
 	_setup_camera()
-	_setup_ui()
+	_emit_initial_selection()
 
 func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and event.pressed:
 		var tile = input_controller.tile_from_screen_position(event.position)
 		if tile != null:
-			selection_overlay.set_selected_tile(tile.tile_key)
-			debug_symbol_overlay.set_selected_tile(tile.tile_key)
+			select_tile(tile)
 
 func _process(_delta: float) -> void:
 	feature_overlay.queue_redraw()
@@ -119,17 +119,19 @@ func _setup_camera() -> void:
 	)
 	map_camera.setup(map_pixel_size)
 
-func _setup_ui() -> void:
-	render_toggle_button.text = _render_toggle_text()
-	render_toggle_button.pressed.connect(_toggle_debug_symbols)
+func select_tile(tile) -> void:
+	selection_overlay.set_selected_tile(tile.tile_key)
+	debug_symbol_overlay.set_selected_tile(tile.tile_key)
+	tile_selected.emit(tile)
 
-func _toggle_debug_symbols() -> void:
+func toggle_debug_symbols() -> void:
 	show_debug_symbols = not show_debug_symbols
 	_apply_debug_symbol_visibility()
 
 func _apply_debug_symbol_visibility() -> void:
 	debug_symbol_overlay.set_debug_symbols_visible(show_debug_symbols)
-	render_toggle_button.text = _render_toggle_text()
 
-func _render_toggle_text() -> String:
-	return "Texture / Symbol"
+func _emit_initial_selection() -> void:
+	var tile = map_state.get_tile(map_state.start_city_tile_key)
+	if tile != null:
+		tile_selected.emit(tile)
