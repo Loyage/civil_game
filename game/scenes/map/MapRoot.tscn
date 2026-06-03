@@ -1,0 +1,25 @@
+[gd_scene load_steps=3 format=3 uid="uid://civilization_map_root"]
+
+[ext_resource type="Script" path="res://game/scripts/map/map_root.gd" id="1_map_root"]
+[ext_resource type="Script" path="res://game/scripts/map/map_overlay.gd" id="2_overlay"]
+
+[node name="MapRoot" type="Node2D"]
+script = ExtResource("1_map_root")
+
+[node name="TerrainLayer" type="TileMapLayer" parent="."]
+
+[node name="BorderOverlay" type="Node2D" parent="."]
+script = ExtResource("2_overlay")
+mode = "border"
+
+[node name="RiverOverlay" type="Node2D" parent="."]
+script = ExtResource("2_overlay")
+mode = "rivers"
+
+[node name="SelectionOverlay" type="Node2D" parent="."]
+script = ExtResource("2_overlay")
+mode = "selection"
+
+[node name="CityMarkerLayer" type="Node2D" parent="."]
+script = ExtResource("2_overlay")
+mode = "city"

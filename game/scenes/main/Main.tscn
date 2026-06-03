@@ -1,0 +1,7 @@
+[gd_scene load_steps=2 format=3 uid="uid://civilization_main"]
+
+[ext_resource type="PackedScene" path="res://game/scenes/map/MapRoot.tscn" id="1_map_root"]
+
+[node name="Main" type="Node2D"]
+
+[node name="MapRoot" parent="." instance=ExtResource("1_map_root")]

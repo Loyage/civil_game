@@ -1,0 +1,8 @@
+.direnv/
+.godot/
+*.import
+export_presets.cfg
+*.translation
+*.remap
+*.tmp
+*.log
