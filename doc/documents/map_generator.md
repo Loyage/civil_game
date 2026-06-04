@@ -136,6 +136,416 @@ worldY = tileY * subMapSize + localY
 
 `TileState` 当前使用 `biome` 和 `terrain_tags` 表达主体地貌与附加标签，不再使用旧版 `terrain_id`、`rainfall`、`ruggedness`、`features` 作为主数据来源。河流和山脉的渲染辅助仍保留 `river_path_points`、`ridge_path_points`，用于大地图 overlay 绘制。
 
+## 当前生成步骤
+
+本节描述当前代码实际执行的地图生成方法，入口是：
+
+```text
+MapGenerator.generate(config)
+```
+
+执行顺序如下：
+
+```text
+MapGenerator.generate(config)
+  -> WorldSkeletonGenerator.generate(config)
+      -> _generate_mountain_ridges()
+      -> _generate_major_rivers()
+      -> _build_skeleton_tile_index()
+  -> BigMapSummaryGenerator.generate(config, skeleton)
+      -> _generate_tile_summary()
+          -> WorldFunctionSampler.sample_height()
+          -> WorldFunctionSampler.sample_temperature()
+          -> WorldFunctionSampler.sample_moisture()
+          -> WorldFunctionSampler.sample_river_strength()
+          -> WorldFunctionSampler.sample_biome()
+      -> _apply_river_summary()
+      -> _apply_mountain_summary()
+```
+
+### 1. 读取生成配置
+
+`MapGenerationConfig` 负责把 JSON 配置或预览工具输入转换成生成器使用的强类型字段。
+
+当前核心字段：
+
+| 字段 | 当前默认 | 用途 |
+| --- | --- | --- |
+| `seed` | `260603` | 所有确定性随机的根输入。 |
+| `big_map_size` | `40` | 大地图边长，当前强制为方形。 |
+| `sub_map_size` | `256` | 每个大地图地块内部对应的小地图边长。 |
+| `sea_level` | `0` | 低于该高度视为海洋。 |
+| `mountain_count` | `6` | 生成多少条全局山脉脊线。 |
+| `major_river_count` | `8` | 生成多少条主河流折线。 |
+| `summary_sample_resolution` | `4` | 每个大地图地块内部摘要采样为 `4 x 4` 点。 |
+| `continent_bias` | `0.26` | 控制大陆中心抬升和边缘衰减幅度。 |
+
+配置读取后，`width` 和 `height` 会被设置为 `big_map_size`，因此大地图运行时尺寸为：
+
+```text
+width = big_map_size
+height = big_map_size
+```
+
+### 2. 生成世界骨架
+
+`WorldSkeletonGenerator` 先生成只描述大尺度结构的 `WorldSkeleton`。这个阶段不生成每个地格的完整地形，只保存会影响连续采样的结构。
+
+`WorldSkeleton` 当前保存：
+
+| 字段 | 含义 |
+| --- | --- |
+| `seed` | 当前世界种子。 |
+| `big_map_size` | 大地图边长。 |
+| `sub_map_size` | 小地图边长。 |
+| `sea_level` | 海平面。 |
+| `continent_bias` | 大陆偏置。 |
+| `mountain_ridges` | 山脉折线数组。 |
+| `rivers` | 主河流折线数组。 |
+| `mountains_by_tile` | 大地图地块到相关山脉 id 的索引。 |
+| `rivers_by_tile` | 大地图地块到相关河流 id 的索引。 |
+
+### 3. 生成山脉骨架
+
+`_generate_mountain_ridges(config, skeleton)` 会按 `mountain_count` 创建多条全局山脉折线。
+
+每条山脉当前包含：
+
+| 字段 | 生成方法 |
+| --- | --- |
+| `id` | 山脉序号。 |
+| `points` | 5 个全局坐标点组成的折线。 |
+| `width` | `52..124` 之间的影响宽度。 |
+| `strength` | `0.62..1.0` 之间的山脉强度。 |
+| `roughness` | `0.35..0.85` 之间的崎岖度，当前已保存但尚未参与采样公式。 |
+
+山脉折线生成方法：
+
+1. 用 `hash01(seed, salt, x, y)` 选择起点。
+2. 用另一个 hash 值选择方向角 `angle`。
+3. 山脉长度为世界尺寸的 `38%..83%`。
+4. 沿主方向取 5 个点。
+5. 每个点沿法线方向加入随机弯曲，形成不完全笔直的山脉。
+
+山脉不是直接写入大地图地块的固定属性，而是在后续高度采样时通过“距离山脉折线的远近”产生抬升影响。
+
+### 4. 生成河流骨架
+
+`_generate_major_rivers(config, skeleton)` 会按 `major_river_count` 创建主河流折线。
+
+每条河流当前包含：
+
+| 字段 | 生成方法 |
+| --- | --- |
+| `id` | 河流序号。 |
+| `points` | 7 个全局坐标点组成的折线。 |
+| `width` | `18..42` 之间的影响宽度。 |
+| `flow` | `0.65..1.0` 之间的流量强度。 |
+
+河流折线生成方法：
+
+1. 起点横坐标在全世界范围内随机。
+2. 起点纵坐标偏向世界上部 `0%..65%`。
+3. 7 个点沿纵向向下推进，整体覆盖约世界高度的 `80%`。
+4. 每个点加入横向漂移，形成弯曲河流。
+5. 坐标被限制在世界边界内。
+
+当前河流是“全局走向折线”，还不是严格由高度场逐格下坡追踪出来的真实水文网络。它会在采样阶段影响高度、湿度和河流强度。
+
+### 5. 建立骨架索引
+
+`_build_skeleton_tile_index(skeleton)` 会把每条山脉和河流登记到相关大地图地块中。
+
+索引方法：
+
+1. 遍历折线上的每个全局点。
+2. 根据 `sub_map_size` 计算该点所在的大地图坐标：
+
+```text
+tile_x = floor(point.x / sub_map_size)
+tile_y = floor(point.y / sub_map_size)
+```
+
+3. 把该结构登记到目标地块及其周围 8 个邻居。
+
+这样做的目的不是精确覆盖所有折线经过的地块，而是给大地图摘要阶段一个快速提示：某个地块附近可能有山脉或河流，需要生成 `ridge_path_points` 或 `river_path_points` 供预览和正式 overlay 使用。
+
+### 6. 连续函数采样
+
+`WorldFunctionSampler` 是当前生成器的核心。它不根据局部坐标或生成顺序取随机数，而是根据全局坐标采样。
+
+全局坐标规则：
+
+```text
+world_x = tile_col * sub_map_size + local_x
+world_y = tile_row * sub_map_size + local_y
+```
+
+#### 高度采样
+
+高度范围被限制在：
+
+```text
+-256..256
+```
+
+当前公式：
+
+```text
+height = continent + detail + mountain - river_carving
+```
+
+各部分含义：
+
+| 部分 | 方法 |
+| --- | --- |
+| `continent` | 中心大陆抬升，边缘衰减。 |
+| `detail` | 三层坐标 hash 噪声叠加。 |
+| `mountain` | 山脉折线附近增加高度，最高约 `150`。 |
+| `river_carving` | 河流附近下切高度，最高约 `46`。 |
+
+大陆基础高度：
+
+```text
+normalized = (world_x / world_size - 0.5, world_y / world_size - 0.5)
+island_falloff = 1 - clamp(length(normalized) * lerp(1.80, 1.15, continent_bias), 0, 1)
+continent = lerp(-140, 130, island_falloff)
+```
+
+细节噪声：
+
+```text
+detail =
+  (hash(seed, 301, world_x / 64, world_y / 64) - 0.5) * 92
++ (hash(seed, 302, world_x / 24, world_y / 24) - 0.5) * 48
++ (hash(seed, 303, world_x / 8,  world_y / 8)  - 0.5) * 20
+```
+
+山脉影响：
+
+```text
+mountain_influence = sum(ridge.strength * falloff(distance_to_ridge / ridge.width))
+mountain = mountain_influence * 150
+```
+
+河流下切：
+
+```text
+river_carving = river_strength * 46
+```
+
+`falloff(t)` 当前是平方衰减：
+
+```text
+falloff(t) = (1 - t) * (1 - t), t < 1
+falloff(t) = 0, t >= 1
+```
+
+#### 温度采样
+
+温度范围为 `0..1`。
+
+当前公式由三个因素组成：
+
+| 因素 | 影响 |
+| --- | --- |
+| 纬度 | 世界中部较热，上下边缘较冷。 |
+| 高度 | 高海拔降低温度。 |
+| 噪声 | 小幅随机扰动。 |
+
+简化公式：
+
+```text
+latitude_temp = 1 - abs(world_y / world_size - 0.5) * 2
+altitude_penalty = max(0, height / 256) * 0.34
+temperature = clamp(latitude_temp - altitude_penalty + noise, 0, 1)
+```
+
+#### 湿度采样
+
+湿度范围为 `0..1`。
+
+当前公式：
+
+```text
+moisture = base_noise + river_bonus + ocean_bonus
+```
+
+| 因素 | 影响 |
+| --- | --- |
+| `base_noise` | 坐标 hash 产生的基础湿度。 |
+| `river_bonus` | 河流附近增加湿度，最高约 `0.34`。 |
+| `ocean_bonus` | 海洋区域增加 `0.16`。 |
+
+#### 河流强度采样
+
+河流强度通过点到所有河流折线的最短距离计算：
+
+```text
+t = distance_to_river / river.width
+river_strength = max(river.flow * falloff(t))
+```
+
+只有当 `t < 1` 时，河流会对该坐标产生影响。
+
+#### Biome 推导
+
+`sample_biome(world_x, world_y)` 会按顺序判断：
+
+| 条件 | biome |
+| --- | --- |
+| `height < sea_level` | `ocean` |
+| `river_strength > 0.70` | `river` |
+| `height > 210` | `snow_mountain` |
+| `height > 150` | `mountain` |
+| `height > 86` | `hill` |
+| `temperature < 0.18` | `tundra` |
+| `moisture < 0.22` 且 `temperature > 0.55` | `desert` |
+| `moisture > 0.75` 且 `temperature > 0.55` | `rainforest` |
+| `moisture > 0.55` | `forest` |
+| `moisture > 0.35` | `grassland` |
+| 其他 | `plain` |
+
+### 7. 大地图摘要
+
+`BigMapSummaryGenerator` 不为每个大地图地块保存完整 `256 x 256` 地格，而是只采样少量点生成摘要。
+
+默认每个大地图地块采样：
+
+```text
+summary_sample_resolution = 4
+sample_count = 4 x 4 = 16
+```
+
+对每个样本点：
+
+1. 计算局部坐标 `local_x/local_y`。
+2. 转换为全局坐标 `world_x/world_y`。
+3. 调用 `WorldFunctionSampler` 采样高度、温度、湿度、河流强度和 biome。
+4. 把结果累计到当前大地图地块摘要。
+
+写入 `TileState` 的摘要字段：
+
+| 字段 | 方法 |
+| --- | --- |
+| `min_height` | 16 个样本高度最小值。 |
+| `max_height` | 16 个样本高度最大值。 |
+| `avg_height` | 16 个样本高度平均值。 |
+| `elevation` | 当前等于 `avg_height`。 |
+| `temperature` | 样本温度平均值。 |
+| `moisture` | 样本湿度平均值。 |
+| `river_strength` | 样本河流强度平均值。 |
+| `has_river` | `river_strength > 0.08` 或骨架索引中存在河流。 |
+| `biome` | 样本中出现次数最多的 biome。 |
+| `terrain_tags` | 根据 biome 推导出的标签。 |
+
+`terrain_tags` 当前推导规则：
+
+| biome | tag |
+| --- | --- |
+| `ocean` | `water` |
+| `river` | `river` |
+| `snow_mountain` / `mountain` | `mountain` |
+| `hill` | `hill` |
+| `forest` / `rainforest` | `forest` |
+| `desert` | `desert` |
+| `tundra` | `tundra` |
+
+### 8. 生成渲染辅助路径
+
+大地图摘要完成后，会把骨架折线转换为每个地块内部的归一化路径点。
+
+河流：
+
+```text
+tile.river_path_points = normalized river polyline points
+tile.river_flow = sign(last_point - first_point)
+```
+
+山脉：
+
+```text
+tile.ridge_path_points = normalized ridge polyline points
+tile.terrain_tags append "mountain"
+```
+
+归一化路径点范围是：
+
+```text
+0.0..1.0
+```
+
+它表示路径点在单个大地图地块内部的位置。例如 `(0.5, 0.5)` 表示地块中心。正式地图 overlay 和预览工具都使用这些点绘制河流线和山脉脊线。
+
+### 9. 标记起始城市
+
+`BigMapSummaryGenerator.generate()` 在遍历大地图地块时检查：
+
+```text
+col == config.start_city_col
+row == config.start_city_row
+```
+
+命中后写入：
+
+```text
+tile.is_city_center = true
+tile.owner_city_id = "player_capital"
+map_state.start_city_tile_key = tile.tile_key
+```
+
+### 10. 写出调试 JSON
+
+正式游戏流程中，`MapLoader` 在生成 `MapState` 后调用 `MapGenerationDebugWriter`，写入：
+
+```text
+config.generated_output_path
+```
+
+默认路径：
+
+```text
+user://generated_map.json
+```
+
+调试 JSON 当前包含：
+
+- `version`
+- `seed`
+- `width`
+- `height`
+- 每个地块的 `biome`、高度摘要、温度、湿度、河流信息、路径点和 `terrain_tags`
+
+该文件是运行时调试输出，不进入仓库版本控制。
+
+## 确定性方法
+
+当前地图生成避免依赖全局随机状态，核心随机值来自坐标 hash。
+
+骨架生成使用：
+
+```text
+hash01(seed, salt, x, y)
+```
+
+连续采样使用：
+
+```text
+hash01(skeleton.seed, salt, world_x / scale, world_y / scale)
+```
+
+这种方式的特点：
+
+- 同一个 seed、同一组参数、同一个坐标，采样结果固定。
+- 生成顺序变化不影响单点采样结果。
+- 大地图摘要和未来小地图只要使用同一全局坐标规则，就能保持边界连续。
+
+当前仍需注意：
+
+- 山脉和河流骨架本身由固定顺序生成，改变 `mountain_count` 或 `major_river_count` 会改变结构数量。
+- 当前主河流不是严格按高度场下坡追踪，因此只保证“有整体走向”，还不保证完整真实水文。
+- `summary_sample_resolution` 越高，大地图摘要越接近真实局部地形，但生成耗时越高。
+
 ## 当前限制
 
 - 相同 seed 的确定性当前通过 headless 加载和人工预览验证，尚未做自动回归测试。
