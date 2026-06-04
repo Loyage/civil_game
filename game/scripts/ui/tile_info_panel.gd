@@ -3,10 +3,16 @@ extends PanelContainer
 
 const TERRAIN_NAMES := {
 	"grassland": "草地",
-	"plains": "平原",
+	"plain": "平原",
 	"ocean": "海洋",
 	"desert": "荒漠",
-	"tundra": "苔原"
+	"tundra": "苔原",
+	"forest": "森林",
+	"rainforest": "雨林",
+	"hill": "丘陵",
+	"mountain": "山脉",
+	"snow_mountain": "雪山",
+	"river": "河流"
 }
 
 const FEATURE_NAMES := {
@@ -30,14 +36,15 @@ func _ready() -> void:
 func show_tile(tile) -> void:
 	title_label.text = "地块信息"
 	coord_label.text = "坐标：%d, %d" % [tile.offset.col, tile.offset.row]
-	terrain_label.text = "基础地形：%s" % TERRAIN_NAMES.get(tile.terrain_id, tile.terrain_id)
-	features_label.text = "特征：%s" % _feature_text(tile.features)
+	terrain_label.text = "生物群系：%s" % TERRAIN_NAMES.get(tile.biome, tile.biome)
+	features_label.text = "标签：%s" % _feature_text(tile.terrain_tags)
 	river_label.text = "河流：%s" % _river_text(tile)
-	environment_label.text = "海拔 %.2f  降水 %.2f\n温度 %.2f  起伏 %.2f" % [
+	environment_label.text = "海拔 %d  最低 %d  最高 %d\n温度 %.2f  湿度 %.2f" % [
 		tile.elevation,
-		tile.rainfall,
+		tile.min_height,
+		tile.max_height,
 		tile.temperature,
-		tile.ruggedness
+		tile.moisture
 	]
 
 func show_empty() -> void:

@@ -6,10 +6,10 @@
 
 首版目标：
 
-- 默认生成 `40 x 20` 地图，尺寸可配置
+- 默认生成 `40 x 40` 方形大地图，尺寸由 `big_map_size` 配置
 - 使用正方形地块紧密排列
 - 使用 seed 生成可复现地图
-- 使用海拔、降水、温度和起伏派生草地、平原、荒漠、苔原、森林、丘陵、河流、海洋、山脉、湖泊、沼泽
+- 使用 `-256..256` 高度、温度、湿度、河流和山脉骨架派生草地、平原、荒漠、苔原、森林、丘陵、河流、海洋和山脉
 - 支持地块选中与信息查询
 - 支持城市边界高亮
 - 支持右键拖拽平移地图视图
@@ -52,7 +52,7 @@
 
 说明：
 
-- `40 x 20` 的地图文件更适合按行列组织
+- 方形 `big_map_size x big_map_size` 配置便于后续按全局坐标展开小地图
 - 邻居查询采用周围 8 个方向
 - 对角移动允许，但交通成本更高
 
@@ -86,18 +86,19 @@ class_name TileState
 
 var tile_key: String
 var offset: OffsetCoord
-var terrain_id: String
-var elevation: float
-var rainfall: float
+var biome: String
+var elevation: int
+var avg_height: int
+var min_height: int
+var max_height: int
 var temperature: float
-var ruggedness: float
 var moisture: float
 var has_river: bool
 var river_flow: Vector2i
 var river_strength: float
 var river_path_points: PackedVector2Array
 var ridge_path_points: PackedVector2Array
-var features: PackedStringArray
+var terrain_tags: PackedStringArray
 var owner_city_id: String
 var is_city_center: bool
 ```
@@ -122,17 +123,14 @@ var tiles_by_key: Dictionary
 ### 地图生成流程
 
 1. `MapLoader` 从 `game/data/maps/map_generation_config.json` 读取生成配置。
-2. 使用配置中的 `seed` 生成海拔、降水和温度数值场。
-3. 从高海拔区域生成河流，让河流沿低海拔方向流向海洋或低地。
-4. 根据海拔阈值派生海洋。
-5. 根据局部海拔落差派生山脉和丘陵。
-6. 根据低海拔和河流汇入派生湖泊。
-7. 根据降水、温度和低洼程度派生荒漠、森林和沼泽。
-8. 创建 `MapState` 和 `TileState` 集合。
-9. 为河流生成地块内部归一化路径点。
-10. 为山脉生成地块内部归一化脊线路径点。
-11. 将完整生成结果写入 `generated_output_path`。
-12. 将 `MapState` 交给渲染层显示。
+2. `MapGenerator` 调用 `WorldSkeletonGenerator` 生成全局山脉折线和主河流折线。
+3. `BigMapSummaryGenerator` 对每个大地图地块内部执行摘要采样。
+4. `WorldFunctionSampler` 基于全局坐标采样高度、温度、湿度、河流强度和 biome。
+5. 根据采样结果创建 `MapState` 和 `TileState` 集合。
+6. 为河流生成地块内部归一化路径点。
+7. 为山脉生成地块内部归一化脊线路径点。
+8. 将完整生成结果写入 `generated_output_path`。
+9. 将 `MapState` 交给渲染层显示。
 
 ### 地图渲染流程
 
@@ -281,7 +279,7 @@ game/scripts/map/terrain_detail_overlay.gd
 - [x] 定义 `OffsetCoord`
 - [x] 定义组合式 `TileState`
 - [x] 实现 seed 可复现地图生成
-- [x] 实现海拔/降水/温度数值场
+- [x] 实现高度/温度/湿度连续采样
 - [x] 实现河流按地块内部方向延展
 - [x] 实现 `offset -> tile_key` 转换
 - [x] 实现正方形地块像素定位

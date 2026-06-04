@@ -2,16 +2,19 @@
 
 ## 目标
 
-`map_generator` 模块负责世界地图生成算法本身。当前生成逻辑集中在 `MapLoader` 中，已经包含配置读取、环境场生成、河流追踪、地貌派生、渲染路径构建和调试输出写入。随着地图生成规则变复杂，需要先把生成器作为独立任务规划出来，后续再实施代码抽离。
+`map_generator` 模块负责世界地图生成算法本身。当前生成逻辑已经从旧版 `MapLoader` 抽离，并进一步接入 `world_generation` 分层：世界骨架、连续函数采样、大地图摘要和小地图生成接口。
 
 首版抽离目标：
 
 - `MapLoader` 只负责读取生成配置、调用生成器、触发调试输出。
 - `MapGenerator` 只负责把 `MapGenerationConfig` 转换为 `MapState`。
+- `WorldSkeletonGenerator` 负责全局山脉、主河流等大尺度结构。
+- `WorldFunctionSampler` 负责基于全局坐标采样高度、温度、湿度、河流强度和 biome。
+- `BigMapSummaryGenerator` 负责把连续世界函数汇总为大地图地块摘要。
 - 生成器不依赖 Godot 场景节点、`TileMapLayer`、overlay 或 UI。
 - 地图生成配置使用专门的 `MapGenerationConfig` 对象承载，不长期依赖裸 `Dictionary`。
 - 调试输出从 `MapLoader` 中进一步拆到 `MapGenerationDebugWriter`。
-- 保持现有地图生成结果的可复现性，避免抽离时改变 seed 行为。
+- 保持相同 seed 和相同配置下生成结果可复现。
 
 ## 职责边界
 
@@ -19,9 +22,9 @@
 
 - 解析后的生成配置建模。
 - 可复现随机数和噪声采样。
-- 基础环境场生成：海拔、降水、温度。
-- 河流源点选择、流向追踪和河流强度写入。
-- 地貌派生：基础地形、山脉、丘陵、湖泊、沼泽、森林。
+- 世界骨架生成：全局山脉折线、主河流折线和大地图地块索引。
+- 连续函数采样：高度、温度、湿度、河流强度和 biome。
+- 大地图摘要：平均高度、最低/最高高度、主体 biome、地貌标签和渲染辅助路径。
 - 生成渲染辅助数据：河流路径点、山脉脊线路径点。
 - 构建 `MapState` 与 `TileState`。
 
@@ -41,6 +44,11 @@ game/scripts/map_generation/map_generation_config.gd
 game/scripts/map_generation/map_generator.gd
 game/scripts/map_generation/map_generation_debug_writer.gd
 game/scripts/map_generation/map_generation_values.gd
+game/scripts/world_generation/world_skeleton.gd
+game/scripts/world_generation/world_skeleton_generator.gd
+game/scripts/world_generation/world_function_sampler.gd
+game/scripts/world_generation/big_map_summary_generator.gd
+game/scripts/world_generation/sub_map_generator.gd
 game/scenes/dev/MapGeneratorPreview.tscn
 game/scripts/dev/map_generator_preview.gd
 ```
@@ -48,9 +56,10 @@ game/scripts/dev/map_generator_preview.gd
 说明：
 
 - `map_generation_config.gd`：强类型配置对象，承载 width、height、seed、thresholds、generation 参数和 start_city。
-- `map_generator.gd`：主生成器入口，提供 `generate(config) -> MapState`。
+- `map_generator.gd`：主生成器入口，提供 `generate(config) -> MapState`，委托 `world_generation` 分层执行实际生成。
 - `map_generation_debug_writer.gd`：把生成结果写入 `user://generated_map.json` 等调试输出。
-- `map_generation_values.gd`：中间结构，用于保存环境场和河流字段，替代当前临时 Dictionary value。
+- `map_generation_values.gd`：旧版抽离阶段的中间结构，当前新生成路径不再作为主数据来源。
+- `world_generation/*.gd`：新世界生成分层，使用全局坐标连续采样，服务大地图摘要和后续小地图懒加载。
 - `MapGeneratorPreview.tscn`：开发期地图生成预览场景，用于输入 seed 和参数后直观看到生成结果。
 - `map_generator_preview.gd`：预览场景脚本，只调用正式 `MapGenerator.generate(config)`，不实现独立生成逻辑。
 
@@ -95,38 +104,46 @@ MapRoot
 
 首版允许 `terrain_thresholds` 和 `generation_params` 继续以 Dictionary 保存，但对象需要提供默认值和读取接口。
 
-### 阶段 2：环境场生成
+### 阶段 2：世界骨架生成
 
-生成每个世界地块的基础字段：
+`WorldSkeletonGenerator` 生成只描述大尺度结构的骨架数据：
 
-- `elevation`
-- `rainfall`
+- `mountain_ridges`
+- `rivers`
+- `mountains_by_tile`
+- `rivers_by_tile`
+
+骨架不保存每个小地图地格的完整地形，只保存能影响连续函数采样的大尺度结构。
+
+### 阶段 3：连续函数采样
+
+`WorldFunctionSampler` 只接受全局坐标采样：
+
+```text
+worldX = tileX * subMapSize + localX
+worldY = tileY * subMapSize + localY
+```
+
+当前采样字段：
+
+- `height`
 - `temperature`
-- 初始 `river_strength`
-- 初始 `river_flow`
+- `moisture`
+- `river_strength`
+- `biome`
 
-这一阶段必须保持 seed 可复现，且不能依赖节点或渲染状态。
+### 阶段 4：大地图摘要
 
-环境场和河流字段由 `MapGenerationValues` 承载。`MapGenerator` 仍使用 `tile_key -> MapGenerationValues` 字典保存整张地图的中间场，避免在生成阶段继续传递裸 Dictionary value。
+`BigMapSummaryGenerator` 对每个大地图地块内部采样，汇总为 `TileState`：
 
-### 阶段 3：河流生成
-
-从高海拔点选择河流源头，沿低海拔方向追踪：
-
-- 标记 `river_strength`
-- 写入 `river_flow_x/y`
-- 避免循环
-- 到海洋或低地停止
-
-后续可以继续扩展流域、湖泊、入海口和跨地块连续约束，但首版抽离不改变现有算法。
-
-### 阶段 4：地貌派生
-
-根据环境场和阈值生成 `TileState`：
-
-- 基础地形：海洋、平原、草地、荒漠、苔原。
-- 附加特征：山脉、丘陵、湖泊、沼泽、森林。
-- 派生字段：`ruggedness`、`moisture`。
+- `elevation` / `avg_height`
+- `min_height`
+- `max_height`
+- `temperature`
+- `moisture`
+- `river_strength`
+- `biome`
+- `terrain_tags`
 
 ### 阶段 5：渲染辅助路径
 
@@ -177,14 +194,14 @@ game/scripts/dev/map_generator_preview.gd
 - 支持基础视图切换：
   - 基础地貌
   - 海拔
-  - 降水
+  - 湿度
   - 温度
   - 河流
   - 特征
 
 后续功能：
 
-- 调整 `continent_bias`、海洋阈值、山脉阈值、丘陵阈值、荒漠降水阈值、沼泽降水阈值、河流数量、河流最大步数。
+- 调整 `continent_bias`、海洋阈值、山脉高度阈值、丘陵高度阈值、荒漠湿度阈值、沼泽湿度阈值和主河流数量。
 - 保存 seed + 参数为 preset。
 - 导出当前地图 PNG。
 - 显示地图摘要：海洋比例、山脉比例、森林比例、河流地块数量、平均海拔。
@@ -251,7 +268,7 @@ MapGeneratorPreview
 - 支持输入 seed、width、height。
 - 支持点击生成并显示地图。
 - 支持随机 seed 和重新生成。
-- 支持基础地貌、海拔、降水、温度、河流、特征视图切换。
+- 支持基础地貌、海拔、湿度、温度、河流、特征视图切换。
 - 确保预览工具调用正式 `MapGenerator.generate(config)`。
 
 ### M7 - 预览工具调参和对比
@@ -293,6 +310,17 @@ MapGeneratorPreview
 - 小地图预览支持左键选择地格。
 - 左侧面板显示小地图 tile key、平均高度和选中地格信息。
 
+### M10 - 连续世界生成改造
+
+- 使用 `WorldSkeletonGenerator` 生成全局山脉折线和主河流折线。
+- 使用 `WorldFunctionSampler` 按全局坐标采样连续高度、温度、湿度、河流强度和 biome。
+- 使用 `BigMapSummaryGenerator` 将小地图地格采样汇总为大地图地块摘要。
+- 大地图高度语义改为 `-256..256` 整数，`TileState.elevation` 表示内部高度平均值。
+- 大地图尺寸改为 `big_map_size x big_map_size` 方形语义。
+- `summary_sample_resolution` 当前默认 `4`，用于控制开局摘要生成成本。
+- `SubMapGenerator` 先作为接口占位，暂不接入旧版 `LocalMapGenerator`。
+- 更新正式 `MapRoot`、UI 信息面板和预览场景以读取 `biome`、`terrain_tags`、平均/最低/最高高度。
+
 ## Checklist
 
 - [x] 创建 `map_generator` 任务文档
@@ -313,7 +341,7 @@ MapGeneratorPreview
 - [x] 实现 seed / width / height 输入
 - [x] 实现预览场景点击生成
 - [x] 实现随机 seed 和重新生成
-- [x] 实现基础地貌 / 海拔 / 降水 / 温度 / 河流 / 特征视图切换
+- [x] 实现基础地貌 / 海拔 / 湿度 / 温度 / 河流 / 特征视图切换
 - [x] 确保预览工具复用正式 `MapGenerator.generate(config)`
 - [x] 设计生成参数调节面板
 - [x] 设计地图摘要数据显示
@@ -330,6 +358,22 @@ MapGeneratorPreview
 - [x] 小地图预览支持右键拖动和 Ctrl + 滚轮缩放
 - [x] 小地图预览支持左键选择地格
 - [x] 左侧面板显示小地图地格信息
+- [x] 创建 `world_generation` 目录
+- [x] 实现 `WorldSkeleton` 数据结构
+- [x] 实现 `WorldSkeletonGenerator`
+- [x] 实现 `WorldFunctionSampler`
+- [x] 实现 `BigMapSummaryGenerator`
+- [x] 新增 `SubMapGenerator` 接口占位
+- [x] 将 `MapGenerator.generate(config)` 改为调用新世界生成分层
+- [x] 将大地图高度改为 `-256..256` 整数语义
+- [x] 将 `TileState` 主地貌字段改为 `biome` 和 `terrain_tags`
+- [x] 更新正式地图渲染读取 `biome`
+- [x] 更新 UI 地块信息面板显示平均/最低/最高高度、温度、湿度、biome
+- [x] 更新生成器预览场景读取新字段
+- [x] 将 `doc/tasks/world_map_generation_guidance.md` 纳入任务文档管理
+- [ ] 将真实小地图生成接入 `SubMapGenerator`
+- [ ] 实现玩家改动增量保存与原始地形分离
+- [ ] 为相同 seed 的大地图摘要增加自动回归测试
 
 ## 风险
 

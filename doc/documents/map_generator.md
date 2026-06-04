@@ -1,12 +1,15 @@
 # Map Generator Module Design
 
-`map_generator` 模块负责世界地图生成算法。它从原先的 `MapLoader` 中抽离出来，让配置读取、生成算法和调试输出各自承担清晰职责。
+`map_generator` 模块负责世界地图生成算法。当前实现已经从旧的“按大地图地块直接随机派生地貌”改为“世界骨架 + 连续函数采样 + 大地图摘要”的结构，为后续 RimWorld 式局部地图懒加载提供连续的全局坐标基础。
 
 ## 当前实现范围
 
 - `MapGenerationConfig` 承载地图生成配置。
-- `MapGenerationValues` 承载生成过程中的环境场和河流中间数据。
-- `MapGenerator.generate(config)` 根据配置生成 `MapState`。
+- `MapGenerator.generate(config)` 根据配置生成 `MapState`，内部委托 `world_generation` 模块完成骨架生成和大地图摘要。
+- `WorldSkeletonGenerator` 生成全局山脉折线和主河流折线。
+- `WorldFunctionSampler` 基于全局坐标 `worldX/worldY` 采样高度、温度、湿度、河流强度和 biome。
+- `BigMapSummaryGenerator` 对每个大地图地块按 `summary_sample_resolution` 采样内部地格，生成平均高度、最低/最高高度和主体 biome。
+- `SubMapGenerator` 先保留接口，不接入现有 `LocalMapGenerator`。
 - `MapGenerationDebugWriter` 负责把生成结果写入调试 JSON。
 - `MapLoader` 保留原有 `load_generated_map()` 入口，但内部只负责读取 JSON、构建配置、调用生成器和触发调试输出。
 - 新增独立开发场景 `MapGeneratorPreview.tscn`，用于输入 seed 和参数后预览生成结果。
@@ -16,9 +19,13 @@
 | 文件 | 职责 |
 | --- | --- |
 | `game/scripts/map_generation/map_generation_config.gd` | 地图生成配置对象，保存 seed、尺寸、阈值、生成参数和起始城市。 |
-| `game/scripts/map_generation/map_generation_values.gd` | 地图生成中间数据，保存环境场和河流字段。 |
-| `game/scripts/map_generation/map_generator.gd` | 世界地图生成器，生成环境场、河流、地貌派生和渲染辅助路径。 |
+| `game/scripts/map_generation/map_generator.gd` | 世界地图生成入口，调用 `WorldSkeletonGenerator` 和 `BigMapSummaryGenerator`。 |
 | `game/scripts/map_generation/map_generation_debug_writer.gd` | 调试输出写入器，负责写出 `user://generated_map.json`。 |
+| `game/scripts/world_generation/world_skeleton.gd` | 世界骨架数据，保存全局山脉、河流和按大地图地块建立的索引。 |
+| `game/scripts/world_generation/world_skeleton_generator.gd` | 根据 seed 和配置生成世界骨架。 |
+| `game/scripts/world_generation/world_function_sampler.gd` | 基于全局坐标采样连续世界函数。 |
+| `game/scripts/world_generation/big_map_summary_generator.gd` | 把连续世界函数汇总为大地图 `MapState`。 |
+| `game/scripts/world_generation/sub_map_generator.gd` | 小地图生成接口占位，后续接入懒加载小地图。 |
 | `game/scenes/dev/MapGeneratorPreview.tscn` | 开发期地图生成器预览场景。 |
 | `game/scripts/dev/map_generator_preview.gd` | 预览场景脚本，调用正式 `MapGenerator.generate(config)` 并渲染预览图。 |
 
@@ -31,6 +38,9 @@ MapRoot
   -> MapLoader.load_generated_map()
       -> MapGenerationConfig.load_from_dictionary(raw_config)
       -> MapGenerator.generate(config)
+          -> WorldSkeletonGenerator.generate(config)
+          -> BigMapSummaryGenerator.generate(config, skeleton)
+              -> WorldFunctionSampler.sample*(worldX, worldY)
       -> MapGenerationDebugWriter.write_generated_map(config, map_state)
 ```
 
@@ -57,14 +67,14 @@ game/scenes/dev/MapGeneratorPreview.tscn
 
 - 输入 seed。
 - 输入 width / height。
-- 调整 `river_count`。
+- 调整 `major_river_count`。
 - 调整 `continent_bias`。
 - 点击“生成”重新生成地图。
 - 点击“随机 Seed”生成随机种子并刷新。
 - 切换视图：
   - 基础地貌
   - 海拔
-  - 降水
+  - 湿度
   - 温度
   - 河流
   - 特征
@@ -104,21 +114,23 @@ game/scenes/dev/MapGeneratorPreview.tscn
 
 生成器可以生成服务于渲染的辅助数据，例如 `river_path_points` 和 `ridge_path_points`，但不直接执行绘制。
 
-## 中间数据
+## 当前世界生成模型
 
-`MapGenerator` 使用 `tile_key -> MapGenerationValues` 字典保存生成过程中的环境场。`MapGenerationValues` 当前包含：
+当前大地图尺寸使用正方形 `big_map_size x big_map_size`。小地图尺寸使用 `sub_map_size`，默认 `256`。所有采样必须先转换为全局坐标：
 
-- `elevation`
-- `rainfall`
-- `temperature`
-- `river_strength`
-- `river_flow`
+```text
+worldX = tileX * subMapSize + localX
+worldY = tileY * subMapSize + localY
+```
 
-这样可以避免继续把单个地块的中间字段存成裸 Dictionary，同时保留通过 `tile_key` 快速查询整张地图环境场的能力。
+高度统一使用 `-256..256` 的整数语义。大地图地块的 `elevation` 是内部采样地格高度的平均值，同时记录 `min_height` 和 `max_height`。当前默认 `summary_sample_resolution = 4`，即每个大地图地块采样 `4x4` 个点，以保证开局大地图摘要生成速度可接受。
+
+`TileState` 当前使用 `biome` 和 `terrain_tags` 表达主体地貌与附加标签，不再使用旧版 `terrain_id`、`rainfall`、`ruggedness`、`features` 作为主数据来源。河流和山脉的渲染辅助仍保留 `river_path_points`、`ridge_path_points`，用于大地图 overlay 绘制。
 
 ## 当前限制
 
-- 抽离前后同 seed 一致性当前采用人工验证说明，尚未做自动回归测试。
+- 相同 seed 的确定性当前通过 headless 加载和人工预览验证，尚未做自动回归测试。
 - 预览工具暂不支持 PNG 导出。
 - 预览工具暂不支持参数 preset。
 - 预览工具暂不支持同屏对比。
+- `SubMapGenerator` 目前只是接口占位，尚未接入真实小地图生成。

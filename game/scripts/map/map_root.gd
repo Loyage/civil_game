@@ -12,10 +12,16 @@ const MapCameraControllerScript := preload("res://game/scripts/map/map_camera_co
 
 const TERRAIN_ATLAS := {
 	"grassland": Vector2i(0, 0),
-	"plains": Vector2i(1, 0),
+	"plain": Vector2i(1, 0),
 	"ocean": Vector2i(2, 0),
 	"desert": Vector2i(3, 0),
-	"tundra": Vector2i(4, 0)
+	"tundra": Vector2i(4, 0),
+	"forest": Vector2i(5, 0),
+	"rainforest": Vector2i(5, 0),
+	"hill": Vector2i(6, 0),
+	"mountain": Vector2i(7, 0),
+	"snow_mountain": Vector2i(7, 0),
+	"river": Vector2i(8, 0)
 }
 
 @onready var terrain_layer: TileMapLayer = $TerrainLayer
@@ -63,8 +69,12 @@ func _setup_tile_set() -> void:
 	source.texture = _build_terrain_atlas()
 	source.texture_region_size = GridLayoutScript.TILE_PIXEL_SIZE
 
+	var created_tiles := {}
 	for atlas_coord in TERRAIN_ATLAS.values():
+		if created_tiles.has(atlas_coord):
+			continue
 		source.create_tile(atlas_coord)
+		created_tiles[atlas_coord] = true
 
 	tile_set.add_source(source, 0)
 	terrain_layer.tile_set = tile_set
@@ -79,6 +89,10 @@ func _build_terrain_atlas() -> Texture2D:
 	_paint_square_tile(image, 2, Color("#3f87c6"), Color("#2769a4"))
 	_paint_square_tile(image, 3, Color("#d7c176"), Color("#aa9252"))
 	_paint_square_tile(image, 4, Color("#b9c4bd"), Color("#87948d"))
+	_paint_square_tile(image, 5, Color("#2f7f3f"), Color("#1f5d2d"))
+	_paint_square_tile(image, 6, Color("#a99062"), Color("#776f48"))
+	_paint_square_tile(image, 7, Color("#b8b8b0"), Color("#686b6f"))
+	_paint_square_tile(image, 8, Color("#2fb8ff"), Color("#1d6f9f"))
 
 	return ImageTexture.create_from_image(image)
 
@@ -99,7 +113,7 @@ func _paint_square_tile(image: Image, tile_index: int, fill_color: Color, border
 func _render_terrain() -> void:
 	terrain_layer.clear()
 	for tile in map_state.tiles_by_key.values():
-		var atlas_coord: Vector2i = TERRAIN_ATLAS.get(tile.terrain_id, TERRAIN_ATLAS["plains"])
+		var atlas_coord: Vector2i = TERRAIN_ATLAS.get(tile.biome, TERRAIN_ATLAS["plain"])
 		terrain_layer.set_cell(tile.offset.to_vector(), 0, atlas_coord, 0)
 
 func _setup_overlays() -> void:

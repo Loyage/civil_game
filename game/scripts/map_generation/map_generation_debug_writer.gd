@@ -12,18 +12,19 @@ func write_generated_map(config, map_state) -> void:
 		tiles.append({
 			"col": tile.offset.col,
 			"row": tile.offset.row,
-			"terrain_id": tile.terrain_id,
+			"biome": tile.biome,
 			"elevation": tile.elevation,
-			"rainfall": tile.rainfall,
+			"avg_height": tile.avg_height,
+			"min_height": tile.min_height,
+			"max_height": tile.max_height,
 			"temperature": tile.temperature,
-			"ruggedness": tile.ruggedness,
 			"moisture": tile.moisture,
 			"has_river": tile.has_river,
 			"river_flow": [tile.river_flow.x, tile.river_flow.y],
 			"river_strength": tile.river_strength,
 			"river_path_points": _serialize_vector2_array(tile.river_path_points),
 			"ridge_path_points": _serialize_vector2_array(tile.ridge_path_points),
-			"features": Array(tile.features)
+			"terrain_tags": Array(tile.terrain_tags)
 		})
 
 	file.store_string(JSON.stringify({

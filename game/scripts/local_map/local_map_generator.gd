@@ -234,6 +234,8 @@ func _slope_at(state, x: int, y: int) -> int:
 	return max_delta
 
 func _tile_elevation_to_height(elevation: float) -> int:
+	if elevation < -1.0 or elevation > 1.0:
+		return clampi(int(round(elevation)), MIN_HEIGHT, MAX_HEIGHT)
 	return clampi(int(round(lerpf(float(MIN_HEIGHT), float(MAX_HEIGHT), elevation))), MIN_HEIGHT, MAX_HEIGHT)
 
 func _centered_smooth_noise(global_x: int, global_y: int, salt: int, radius: int) -> float:

@@ -21,10 +21,16 @@ const LOCAL_MAP_DISPLAY_SIZE := Vector2(640.0, 640.0)
 
 const TERRAIN_COLORS := {
 	"grassland": Color("#6fb35f"),
-	"plains": Color("#cdbb73"),
+	"plain": Color("#cdbb73"),
 	"ocean": Color("#3f87c6"),
 	"desert": Color("#d7c176"),
-	"tundra": Color("#b9c4bd")
+	"tundra": Color("#b9c4bd"),
+	"forest": Color("#2f7f3f"),
+	"rainforest": Color("#1f6f3a"),
+	"hill": Color("#a99062"),
+	"mountain": Color("#b8b8b0"),
+	"snow_mountain": Color("#dddddd"),
+	"river": Color("#2fb8ff")
 }
 
 @onready var seed_input: SpinBox = %SeedInput
@@ -72,7 +78,7 @@ func _setup_view_modes() -> void:
 	view_mode_button.clear()
 	view_mode_button.add_item("基础地貌", VIEW_TERRAIN)
 	view_mode_button.add_item("海拔", VIEW_ELEVATION)
-	view_mode_button.add_item("降水", VIEW_RAINFALL)
+	view_mode_button.add_item("湿度", VIEW_RAINFALL)
 	view_mode_button.add_item("温度", VIEW_TEMPERATURE)
 	view_mode_button.add_item("河流", VIEW_RIVER)
 	view_mode_button.add_item("特征", VIEW_FEATURES)
@@ -100,12 +106,13 @@ func _randomize_seed() -> void:
 func _build_config_from_inputs():
 	var config = MapGenerationConfigScript.new()
 	config.seed = int(seed_input.value)
-	config.width = int(width_input.value)
-	config.height = int(height_input.value)
-	config.start_city_col = clampi(int(config.width / 2), 0, max(0, config.width - 1))
-	config.start_city_row = clampi(int(config.height / 2), 0, max(0, config.height - 1))
+	config.big_map_size = int(width_input.value)
+	config.width = config.big_map_size
+	config.height = config.big_map_size
+	config.start_city_col = clampi(int(config.big_map_size / 2), 0, max(0, config.big_map_size - 1))
+	config.start_city_row = clampi(int(config.big_map_size / 2), 0, max(0, config.big_map_size - 1))
 	config.start_city_name = "Preview"
-	config.generation_params["river_count"] = int(river_count_input.value)
+	config.major_river_count = int(river_count_input.value)
 	config.generation_params["continent_bias"] = float(continent_bias_input.value)
 	config.generated_output_path = "user://generated_map_preview.json"
 	return config
@@ -163,22 +170,25 @@ func _local_cell_color(index: int) -> Color:
 func _tile_color(tile, view_id: int) -> Color:
 	match view_id:
 		VIEW_ELEVATION:
-			return _gradient_color(tile.elevation, Color("#16345f"), Color("#f0f0dc"))
+			return _height_color(tile.elevation)
 		VIEW_RAINFALL:
-			return _gradient_color(tile.rainfall, Color("#d7c176"), Color("#2f78c4"))
+			return _gradient_color(tile.moisture, Color("#d7c176"), Color("#2f78c4"))
 		VIEW_TEMPERATURE:
 			return _gradient_color(tile.temperature, Color("#4b72c2"), Color("#d45a34"))
 		VIEW_RIVER:
 			if tile.has_river:
 				return Color("#2fb8ff").lerp(Color("#ffffff"), clampf(tile.river_strength, 0.0, 1.0) * 0.35)
-			return _gradient_color(tile.elevation, Color("#26394f"), Color("#7f876e"))
+			return _height_color(tile.elevation)
 		VIEW_FEATURES:
 			return _feature_color(tile)
 		_:
-			return TERRAIN_COLORS.get(tile.terrain_id, Color("#cdbb73"))
+			return TERRAIN_COLORS.get(tile.biome, Color("#cdbb73"))
 
 func _gradient_color(value: float, low: Color, high: Color) -> Color:
 	return low.lerp(high, clampf(value, 0.0, 1.0))
+
+func _height_color(height: int) -> Color:
+	return _gradient_color(inverse_lerp(-256.0, 256.0, float(height)), Color("#16345f"), Color("#f0f0dc"))
 
 func _feature_color(tile) -> Color:
 	if tile.is_mountain():
@@ -204,7 +214,7 @@ func _update_summary(config) -> void:
 	}
 	var elevation_total = 0.0
 	for tile in map_state.tiles_by_key.values():
-		if tile.terrain_id == "ocean":
+		if tile.biome == "ocean":
 			counts["ocean"] += 1
 		if tile.is_mountain():
 			counts["mountain"] += 1
@@ -212,14 +222,14 @@ func _update_summary(config) -> void:
 			counts["forest"] += 1
 		if tile.has_river:
 			counts["river"] += 1
-		elevation_total += tile.elevation
+		elevation_total += float(tile.elevation)
 
 	var total = max(1.0, float(map_state.width * map_state.height))
-	summary_label.text = "seed %d | %dx%d | river_count %d | continent_bias %.2f\n海洋 %.1f%%  山脉 %.1f%%  森林 %.1f%%  河流地块 %d  平均海拔 %.2f" % [
+	summary_label.text = "seed %d | %dx%d | major_river_count %d | continent_bias %.2f\n海洋 %.1f%%  山脉 %.1f%%  森林 %.1f%%  河流地块 %d  平均海拔 %.2f" % [
 		config.seed,
 		config.width,
 		config.height,
-		int(config.generation_params.get("river_count", 0)),
+		config.major_river_count,
 		float(config.generation_params.get("continent_bias", 0.0)),
 		float(counts["ocean"]) / total * 100.0,
 		float(counts["mountain"]) / total * 100.0,
@@ -372,15 +382,15 @@ func _show_tile_info(coord: Vector2i) -> void:
 		return
 	local_map_button.disabled = false
 
-	tile_info_label.text = "选中地块：%d, %d\n地形：%s\n特征：%s\n海拔 %.2f  降水 %.2f\n温度 %.2f  起伏 %.2f\n湿度 %.2f\n河流：%s  强度 %.2f\n流向：%d, %d" % [
+	tile_info_label.text = "选中地块：%d, %d\n生物群系：%s\n标签：%s\n海拔 %d  最低 %d  最高 %d\n温度 %.2f  湿度 %.2f\n河流：%s  强度 %.2f\n流向：%d, %d" % [
 		tile.offset.col,
 		tile.offset.row,
-		tile.terrain_id,
-		_feature_text(tile.features),
+		tile.biome,
+		_feature_text(tile.terrain_tags),
 		tile.elevation,
-		tile.rainfall,
+		tile.min_height,
+		tile.max_height,
 		tile.temperature,
-		tile.ruggedness,
 		tile.moisture,
 		"有" if tile.has_river else "无",
 		tile.river_strength,

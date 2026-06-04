@@ -1,6 +1,6 @@
 # Map Module Design
 
-地图模块负责生成、保存、展示和查询世界地图。当前版本已经从类文明的单一地形格，调整为更接近 RimWorld 世界地图的多属性地块：每个地块不只拥有一种地貌，而是由海拔、降水、温度、起伏度、水系等环境字段共同推导出基础地形和附加特征。
+地图模块负责生成、展示和查询世界地图。当前版本已经从类文明的单一地形格，调整为更接近 RimWorld 世界地图的多属性地块：每个地块不只拥有一种地貌，而是由高度、温度、湿度、水系和世界骨架共同推导出主体 biome 与附加标签。
 
 当前地图仍是世界地图层级，不包含进入单个地块后的局部地图生成。
 
@@ -8,9 +8,9 @@
 
 地图模块当前承担以下职责：
 
-- 生成固定尺寸的可复现样例地图。
+- 生成 seed 可复现的方形大地图摘要。
 - 用多环境字段描述每个地块，而不是只记录单一 terrain。
-- 根据海拔、降水、河流等字段自然推导山脉、丘陵、湖泊、沼泽、森林等特征。
+- 根据 `-256..256` 高度、温度、湿度、河流和山脉骨架推导主体 biome 与附加标签。
 - 在 Godot 4 中用 `TileMapLayer` 和自定义 overlay 展示地图。
 - 支持左键选择地块、右键拖拽视角、按住 Ctrl 后滚轮缩放。
 - 提供 8 邻域查询和基础交通可达程度计算。
@@ -24,6 +24,7 @@
 | `game/scripts/map_generation/map_generation_config.gd` | 地图生成配置对象，承载 seed、尺寸、阈值和生成参数。 |
 | `game/scripts/map_generation/map_generator.gd` | 世界地图生成器，把 `MapGenerationConfig` 转换为 `MapState`。 |
 | `game/scripts/map_generation/map_generation_debug_writer.gd` | 将生成结果写入 `user://generated_map.json` 等调试输出。 |
+| `game/scripts/world_generation/*.gd` | 世界骨架、连续函数采样、大地图摘要和小地图生成接口。 |
 | `game/scripts/map/map_state.gd` | 地图运行时状态，保存宽高、地块字典、起始城市等。 |
 | `game/scripts/map/tile_state.gd` | 单个地块的数据结构，保存基础地形、环境字段、特征和河流信息。 |
 | `game/scripts/map/grid_layout.gd` | 方形格坐标与像素位置转换。 |
@@ -47,13 +48,13 @@
 
 ### TileState
 
-`TileState` 表示单个世界地块。当前保留两类信息：
+`TileState` 表示单个世界地块。当前保留三类信息：
 
-- 原始环境字段：`elevation`、`rainfall`、`temperature`、`ruggedness`、`moisture`。
-- 推导结果：`terrain_id`、`features`、`has_river`、`river_flow`、`river_strength`。
+- 原始摘要字段：`elevation`、`avg_height`、`min_height`、`max_height`、`temperature`、`moisture`。
+- 推导结果：`biome`、`terrain_tags`、`has_river`、`river_flow`、`river_strength`。
 - 渲染辅助数据：`river_path_points`、`ridge_path_points`。
 
-这种结构允许后续继续扩展，不需要把所有地貌都硬编码成互斥类型。例如一个地块可以同时是 `grassland`，带有 `forest`，并且有 `river` 穿过。
+这种结构允许后续继续扩展，不需要把所有地貌都硬编码成互斥类型。例如一个地块可以主体是 `grassland`，同时带有 `forest` 标签，并且有 `river` 穿过。
 
 `river_path_points` 和 `ridge_path_points` 使用地块内部归一化坐标，范围为 `0.0` 到 `1.0`。这样渲染层可以根据当前 tile 像素尺寸转换为实际绘制坐标，同时不会把逻辑数据绑定到具体分辨率。
 
@@ -63,49 +64,51 @@
 
 当前生成流程如下：
 
-1. 读取配置中的地图尺寸、种子和生成参数。
-2. 使用确定性随机数生成基础环境场。
-3. 用中心大陆偏置提高地图中心区域海拔，边缘更容易形成海洋。
-4. 基于海拔和扰动值生成降水、温度、起伏度和湿度。
-5. 从高海拔点生成河流，让水流沿低处扩展。
-6. 根据环境字段推导基础地形和附加特征。
-7. 为河流生成地块内部路径点。
-8. 为相邻山地生成连续脊线路径点。
-9. 创建起始城市标记，并写入生成结果文件。
+1. 读取配置中的 `big_map_size`、`sub_map_size`、种子和生成参数。
+2. `WorldSkeletonGenerator` 使用 seed 生成全局山脉折线和主河流折线。
+3. `WorldFunctionSampler` 基于全局坐标采样高度、温度、湿度、河流强度和 biome。
+4. `BigMapSummaryGenerator` 对每个大地图地块内部进行 `summary_sample_resolution x summary_sample_resolution` 采样。
+5. 根据采样结果写入平均高度、最低/最高高度、主体 biome、温度、湿度和河流强度。
+6. 根据骨架索引生成河流路径点和山脉脊线路径点。
+7. 创建起始城市标记，并写入生成结果文件。
 
 生成结果依赖种子，因此同一配置可以生成稳定地图。
 
 ## 地貌推导规则
 
-基础地形和特征不是相互独立随机生成，而是从环境字段推导。
+主体 biome 和附加标签不是相互独立随机生成，而是从连续世界函数和骨架影响推导。
 
-### 基础地形
+### 主体 Biome
 
-`terrain_id` 当前用于渲染底色和基本通行规则：
+`biome` 当前用于渲染底色和基本通行规则：
 
 | 地形 | 推导依据 |
 | --- | --- |
-| `ocean` | 海拔低于海洋阈值。 |
-| `plains` | 默认陆地，温和环境。 |
-| `grassland` | 降水较高、环境较湿润。 |
-| `desert` | 降水低且温度较高。 |
+| `ocean` | 高度低于海平面。 |
+| `plain` | 默认陆地，温和环境。 |
+| `grassland` | 湿度中等偏高。 |
+| `forest` / `rainforest` | 湿度较高，且温度条件允许。 |
+| `desert` | 湿度低且温度较高。 |
 | `tundra` | 温度较低。 |
+| `hill` | 高度达到丘陵阈值。 |
+| `mountain` / `snow_mountain` | 高度达到山地阈值。 |
+| `river` | 主河道强度达到阈值。 |
 
 ### 附加特征
 
-`features` 是数组，允许一个地块拥有多个特征：
+`terrain_tags` 是数组，允许一个地块拥有多个特征：
 
 | 特征 | 推导依据 |
 | --- | --- |
 | `mountain` | 高海拔且起伏度高，代表海拔突然拔高区域。 |
 | `hill` | 陆地起伏明显但没有达到山脉程度。 |
-| `lake` | 低海拔陆地且有河流汇入，代表局部蓄水。 |
-| `swamp` | 高湿度、低洼或有河流影响的陆地区域。 |
 | `forest` | 湿润陆地，且不在高山区域。 |
+| `water` | 海洋或水体区域。 |
+| `river` | 有河流穿过。 |
 
 河流不是边缘属性，而是地块内部属性，由 `has_river`、`river_flow` 和 `river_path_points` 表示。这样后续进入局部地图时，可以在该地块内部生成实际河道。
 
-湖泊地块中的河流线只进入湖泊中心，不继续穿过湖面。湖泊本身由地貌纹理层绘制为不规则水面斑块。
+湖泊和沼泽后续会从高度低洼、湿度和河流汇入关系中继续细化；当前大地图摘要层尚未单独落地湖泊 biome。
 
 ## 交通与邻接
 
