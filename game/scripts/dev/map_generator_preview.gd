@@ -11,6 +11,7 @@ const VIEW_RAINFALL := 2
 const VIEW_TEMPERATURE := 3
 const VIEW_RIVER := 4
 const VIEW_FEATURES := 5
+const VIEW_DIRECTIONS := 6
 const MODE_WORLD := 0
 const MODE_LOCAL := 1
 const MIN_ZOOM := 0.5
@@ -18,6 +19,12 @@ const MAX_ZOOM := 16.0
 const ZOOM_STEP := 1.10
 const BASE_TILE_SIZE := 16.0
 const LOCAL_MAP_DISPLAY_SIZE := Vector2(640.0, 640.0)
+const DIRECTION_OVERLAY_PIXELS_PER_TILE := 4
+const DIRECTION_OVERLAY_FAR_ZOOM := 0.55
+const DIRECTION_RIVER_COLOR := Color("#34c6ff")
+const DIRECTION_RIVER_ARROW_COLOR := Color("#d7f6ff")
+const DIRECTION_RIDGE_COLOR := Color("#4f4438")
+const DIRECTION_RIDGE_HIGHLIGHT_COLOR := Color("#d8d0bd")
 
 const TERRAIN_COLORS := {
 	"grassland": Color("#6fb35f"),
@@ -39,11 +46,13 @@ const TERRAIN_COLORS := {
 @onready var river_count_input: SpinBox = %RiverCountInput
 @onready var continent_bias_input: SpinBox = %ContinentBiasInput
 @onready var view_mode_button: OptionButton = %ViewModeButton
+@onready var direction_overlay_toggle: CheckButton = %DirectionOverlayToggle
 @onready var generate_button: Button = %GenerateButton
 @onready var random_seed_button: Button = %RandomSeedButton
 @onready var local_map_button: Button = %LocalMapButton
 @onready var preview_viewport: Control = %PreviewViewport
 @onready var map_texture: TextureRect = %MapTexture
+@onready var direction_overlay_texture: TextureRect = %DirectionOverlayTexture
 @onready var selection_marker: ColorRect = %SelectionMarker
 @onready var summary_label: Label = %SummaryLabel
 @onready var tile_info_label: Label = %TileInfoLabel
@@ -64,9 +73,15 @@ func _ready() -> void:
 	random_seed_button.pressed.connect(_randomize_seed)
 	local_map_button.pressed.connect(_toggle_local_map)
 	view_mode_button.item_selected.connect(func(_index: int) -> void: _render_preview())
+	direction_overlay_toggle.toggled.connect(func(_enabled: bool) -> void: _update_direction_overlay_visibility())
 	preview_viewport.resized.connect(_apply_view_transform)
 	preview_viewport.gui_input.connect(_handle_preview_gui_input)
 	_generate_preview()
+	if DisplayServer.get_name() == "headless":
+		call_deferred("_quit_headless_preview")
+
+func _quit_headless_preview() -> void:
+	get_tree().quit()
 
 func _handle_preview_gui_input(event: InputEvent) -> void:
 	if event is InputEventMouseButton:
@@ -82,6 +97,7 @@ func _setup_view_modes() -> void:
 	view_mode_button.add_item("温度", VIEW_TEMPERATURE)
 	view_mode_button.add_item("河流", VIEW_RIVER)
 	view_mode_button.add_item("特征", VIEW_FEATURES)
+	view_mode_button.add_item("走向", VIEW_DIRECTIONS)
 	view_mode_button.select(0)
 
 func _generate_preview() -> void:
@@ -94,6 +110,7 @@ func _generate_preview() -> void:
 	local_map_button.text = "查看小地图"
 	local_map_button.disabled = true
 	view_mode_button.disabled = false
+	direction_overlay_toggle.disabled = false
 	_render_preview()
 	_update_summary(config)
 	_show_empty_tile_info()
@@ -134,6 +151,7 @@ func _render_preview() -> void:
 	map_texture.texture = ImageTexture.create_from_image(image)
 	base_map_size = Vector2(float(map_state.width), float(map_state.height)) * BASE_TILE_SIZE
 	map_texture.size = base_map_size
+	_render_direction_overlay()
 	_update_selection_marker()
 
 func _render_local_map() -> void:
@@ -148,6 +166,7 @@ func _render_local_map() -> void:
 	map_texture.texture = ImageTexture.create_from_image(image)
 	base_map_size = LOCAL_MAP_DISPLAY_SIZE
 	map_texture.size = base_map_size
+	_clear_direction_overlay()
 	_update_selection_marker()
 
 func _local_cell_color(index: int) -> Color:
@@ -181,6 +200,8 @@ func _tile_color(tile, view_id: int) -> Color:
 			return _height_color(tile.elevation)
 		VIEW_FEATURES:
 			return _feature_color(tile)
+		VIEW_DIRECTIONS:
+			return _direction_base_color(tile)
 		_:
 			return TERRAIN_COLORS.get(tile.biome, Color("#cdbb73"))
 
@@ -204,6 +225,11 @@ func _feature_color(tile) -> Color:
 	if tile.has_river:
 		return Color("#2fb8ff")
 	return Color("#444444")
+
+func _direction_base_color(tile) -> Color:
+	if tile.biome == "ocean":
+		return Color("#203d4a")
+	return _height_color(tile.elevation).darkened(0.42)
 
 func _update_summary(config) -> void:
 	var counts = {
@@ -312,7 +338,122 @@ func _apply_view_transform() -> void:
 	var scaled_size := base_map_size * zoom_level
 	map_texture.scale = Vector2.ONE * zoom_level
 	map_texture.position = preview_viewport.size / 2.0 - scaled_size / 2.0 + pan_offset
+	_update_direction_overlay_transform()
 	_update_selection_marker()
+
+func _render_direction_overlay() -> void:
+	if direction_overlay_texture == null or map_state == null:
+		return
+	if DisplayServer.get_name() == "headless":
+		_clear_direction_overlay()
+		return
+	var overlay_width: int = int(map_state.width) * DIRECTION_OVERLAY_PIXELS_PER_TILE
+	var overlay_height: int = int(map_state.height) * DIRECTION_OVERLAY_PIXELS_PER_TILE
+	var image := Image.create(overlay_width, overlay_height, false, Image.FORMAT_RGBA8)
+	image.fill(Color(0, 0, 0, 0))
+	_draw_direction_paths_to_image(image)
+	direction_overlay_texture.texture = ImageTexture.create_from_image(image)
+	direction_overlay_texture.size = base_map_size
+	_update_direction_overlay_transform()
+
+func _clear_direction_overlay() -> void:
+	if direction_overlay_texture == null:
+		return
+	direction_overlay_texture.texture = null
+	direction_overlay_texture.visible = false
+
+func _update_direction_overlay_transform() -> void:
+	if direction_overlay_texture == null:
+		return
+	direction_overlay_texture.position = map_texture.position
+	direction_overlay_texture.scale = Vector2.ONE * zoom_level
+	direction_overlay_texture.size = base_map_size
+	_update_direction_overlay_visibility()
+
+func _update_direction_overlay_visibility() -> void:
+	if direction_overlay_texture == null:
+		return
+	var force_visible := view_mode_button.get_selected_id() == VIEW_DIRECTIONS
+	direction_overlay_texture.visible = (
+		preview_mode == MODE_WORLD
+		and map_state != null
+		and zoom_level >= DIRECTION_OVERLAY_FAR_ZOOM
+		and (direction_overlay_toggle.button_pressed or force_visible)
+	)
+
+func _draw_direction_paths_to_image(image: Image) -> void:
+	for tile in map_state.tiles_by_key.values():
+		if tile.ridge_path_points.size() >= 2:
+			var ridge_points := _tile_path_to_overlay_points(tile, tile.ridge_path_points)
+			_draw_overlay_polyline(image, ridge_points, DIRECTION_RIDGE_COLOR)
+			_draw_overlay_polyline(image, ridge_points, DIRECTION_RIDGE_HIGHLIGHT_COLOR)
+	for tile in map_state.tiles_by_key.values():
+		if not tile.has_river or tile.river_path_points.size() < 2:
+			continue
+		var river_points := _tile_path_to_overlay_points(tile, tile.river_path_points)
+		_draw_overlay_polyline(image, river_points, DIRECTION_RIVER_COLOR)
+		_draw_overlay_arrow(image, river_points)
+
+func _tile_path_to_overlay_points(tile, normalized_points: PackedVector2Array) -> Array[Vector2i]:
+	var result: Array[Vector2i] = []
+	for point in normalized_points:
+		result.append(Vector2i(
+			int(round((float(tile.offset.col) + point.x) * float(DIRECTION_OVERLAY_PIXELS_PER_TILE))),
+			int(round((float(tile.offset.row) + point.y) * float(DIRECTION_OVERLAY_PIXELS_PER_TILE)))
+		))
+	return result
+
+func _draw_overlay_polyline(image: Image, points: Array[Vector2i], color: Color) -> void:
+	for index in range(points.size() - 1):
+		_draw_overlay_line(image, points[index], points[index + 1], color)
+
+func _draw_overlay_arrow(image: Image, points: Array[Vector2i]) -> void:
+	if points.size() < 2:
+		return
+	var tip := Vector2(points[points.size() - 1])
+	var previous := Vector2(points[points.size() - 2])
+	var direction := tip - previous
+	if direction.length_squared() < 0.01:
+		return
+	direction = direction.normalized()
+	var side := Vector2(-direction.y, direction.x)
+	var length := 2.2
+	var left := Vector2i(tip - direction * length + side * length * 0.55)
+	var right := Vector2i(tip - direction * length - side * length * 0.55)
+	_draw_overlay_line(image, Vector2i(tip), left, DIRECTION_RIVER_ARROW_COLOR)
+	_draw_overlay_line(image, Vector2i(tip), right, DIRECTION_RIVER_ARROW_COLOR)
+
+func _draw_overlay_line(image: Image, start: Vector2i, end: Vector2i, color: Color) -> void:
+	var x0 := start.x
+	var y0 := start.y
+	var x1 := end.x
+	var y1 := end.y
+	var dx: int = abs(x1 - x0)
+	var dy: int = -abs(y1 - y0)
+	var sx := 1 if x0 < x1 else -1
+	var sy := 1 if y0 < y1 else -1
+	var err: int = dx + dy
+	var max_steps: int = image.get_width() + image.get_height() + 8
+	var step_count := 0
+	while true:
+		_set_overlay_pixel(image, x0, y0, color)
+		if x0 == x1 and y0 == y1:
+			break
+		step_count += 1
+		if step_count > max_steps:
+			break
+		var e2: int = 2 * err
+		if e2 >= dy:
+			err += dy
+			x0 += sx
+		if e2 <= dx:
+			err += dx
+			y0 += sy
+
+func _set_overlay_pixel(image: Image, x: int, y: int, color: Color) -> void:
+	if x < 0 or y < 0 or x >= image.get_width() or y >= image.get_height():
+		return
+	image.set_pixel(x, y, color)
 
 func _clamp_pan_offset() -> void:
 	var scaled_size := base_map_size * zoom_level
@@ -421,6 +562,7 @@ func _show_selected_tile_local_map() -> void:
 	selected_cell = Vector2i(-1, -1)
 	local_map_button.text = "返回大地图"
 	view_mode_button.disabled = true
+	direction_overlay_toggle.disabled = true
 	_render_local_map()
 	_update_summary_for_local_map(tile)
 	_show_empty_cell_info(tile.tile_key)
@@ -430,6 +572,7 @@ func _show_world_map() -> void:
 	preview_mode = MODE_WORLD
 	local_map_button.text = "查看小地图"
 	view_mode_button.disabled = false
+	direction_overlay_toggle.disabled = false
 	_render_preview()
 	_update_summary(_build_config_from_inputs())
 	_show_tile_info(selected_tile)

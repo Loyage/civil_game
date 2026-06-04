@@ -116,6 +116,12 @@ text = "View"
 unique_name_in_owner = true
 layout_mode = 2
 
+[node name="DirectionOverlayToggle" type="CheckButton" parent="Root/Controls/Margin/Column"]
+unique_name_in_owner = true
+layout_mode = 2
+button_pressed = true
+text = "显示走向"
+
 [node name="GenerateButton" type="Button" parent="Root/Controls/Margin/Column"]
 unique_name_in_owner = true
 layout_mode = 2
@@ -165,6 +171,12 @@ mouse_filter = 0
 clip_contents = true
 
 [node name="MapTexture" type="TextureRect" parent="Root/PreviewPanel/PreviewMargin/PreviewViewport"]
+unique_name_in_owner = true
+mouse_filter = 2
+stretch_mode = 5
+texture_filter = 1
+
+[node name="DirectionOverlayTexture" type="TextureRect" parent="Root/PreviewPanel/PreviewMargin/PreviewViewport"]
 unique_name_in_owner = true
 mouse_filter = 2
 stretch_mode = 5
