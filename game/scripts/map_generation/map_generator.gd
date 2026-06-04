@@ -5,6 +5,7 @@ const OffsetCoordScript := preload("res://game/scripts/map/offset_coord.gd")
 const GridLayoutScript := preload("res://game/scripts/map/grid_layout.gd")
 const MapStateScript := preload("res://game/scripts/map/map_state.gd")
 const TileStateScript := preload("res://game/scripts/map/tile_state.gd")
+const MapGenerationValuesScript := preload("res://game/scripts/map_generation/map_generation_values.gd")
 
 func generate(config):
 	var map_state = MapStateScript.new(config.width, config.height)
@@ -35,7 +36,7 @@ func generate(config):
 	_build_render_paths(map_state)
 	return map_state
 
-func _generate_base_values(config, col: int, row: int) -> Dictionary:
+func _generate_base_values(config, col: int, row: int):
 	var x: float = float(col) / max(1.0, float(config.width - 1))
 	var y: float = float(row) / max(1.0, float(config.height - 1))
 	var center_distance: float = Vector2(x - 0.5, y - 0.5).length() * 1.3
@@ -51,23 +52,16 @@ func _generate_base_values(config, col: int, row: int) -> Dictionary:
 	var temperature: float = 0.82 - abs(y - 0.5) * 1.25 + _centered_smooth_noise(config.seed, col, row, 3) * 0.22 - elevation * 0.18
 	temperature = clampf(temperature, 0.0, 1.0)
 
-	return {
-		"elevation": elevation,
-		"rainfall": rainfall,
-		"temperature": temperature,
-		"river_strength": 0.0,
-		"river_flow_x": 0,
-		"river_flow_y": 0
-	}
+	return MapGenerationValuesScript.new(elevation, rainfall, temperature)
 
 func _apply_values_to_tile(config, values: Dictionary, point_key: String, tile) -> void:
-	var value: Dictionary = values[point_key]
-	tile.elevation = float(value.get("elevation", 0.0))
-	tile.rainfall = float(value.get("rainfall", 0.0))
-	tile.temperature = float(value.get("temperature", 0.0))
-	tile.river_strength = float(value.get("river_strength", 0.0))
+	var value = values[point_key]
+	tile.elevation = value.elevation
+	tile.rainfall = value.rainfall
+	tile.temperature = value.temperature
+	tile.river_strength = value.river_strength
 	tile.has_river = tile.river_strength > 0.0
-	tile.river_flow = Vector2i(int(value.get("river_flow_x", 0)), int(value.get("river_flow_y", 0)))
+	tile.river_flow = value.river_flow
 	tile.ruggedness = _ruggedness(values, tile.offset.col, tile.offset.row, config.width, config.height)
 	tile.moisture = clampf(tile.rainfall + tile.river_strength * 0.25, 0.0, 1.0)
 
@@ -120,16 +114,15 @@ func _trace_river(seed: int, start: Vector2i, values: Dictionary, width: int, he
 		if visited.has(key):
 			return
 		visited[key] = true
-		var value: Dictionary = values[key]
-		value["river_strength"] = max(float(value.get("river_strength", 0.0)), 1.0 - float(step) / float(max_steps))
+		var value = values[key]
+		value.river_strength = max(value.river_strength, 1.0 - float(step) / float(max_steps))
 
 		var next: Vector2i = _lowest_neighbor(seed, current, values, width, height)
 		if next == current:
 			return
 
-		value["river_flow_x"] = next.x - current.x
-		value["river_flow_y"] = next.y - current.y
-		if float(values[_point_key(next.x, next.y)].get("elevation", 0.0)) <= 0.32:
+		value.river_flow = next - current
+		if values[_point_key(next.x, next.y)].elevation <= 0.32:
 			return
 		current = next
 
@@ -139,7 +132,7 @@ func _highest_points(values: Dictionary, width: int, height: int, count: int) ->
 	for row in range(height):
 		for col in range(width):
 			var point := Vector2i(col, row)
-			var score: float = float(values[_point_key(col, row)].get("elevation", 0.0))
+			var score: float = values[_point_key(col, row)].elevation
 			if score <= 0.58:
 				continue
 			_insert_ranked_point(selected, selected_scores, point, score, count)
@@ -159,12 +152,12 @@ func _insert_ranked_point(points: Array, scores: Array, point: Vector2i, score: 
 
 func _lowest_neighbor(seed: int, current: Vector2i, values: Dictionary, width: int, height: int) -> Vector2i:
 	var best: Vector2i = current
-	var best_score: float = float(values[_point_key(current.x, current.y)].get("elevation", 0.0))
+	var best_score: float = values[_point_key(current.x, current.y)].elevation
 	for direction in _directions8():
 		var next: Vector2i = current + direction
 		if next.x < 0 or next.x >= width or next.y < 0 or next.y >= height:
 			continue
-		var next_elevation: float = float(values[_point_key(next.x, next.y)].get("elevation", 0.0))
+		var next_elevation: float = values[_point_key(next.x, next.y)].elevation
 		var score: float = next_elevation + _value_noise(seed, next.x, next.y, 8) * 0.025
 		if score < best_score:
 			best_score = score
@@ -172,13 +165,13 @@ func _lowest_neighbor(seed: int, current: Vector2i, values: Dictionary, width: i
 	return best
 
 func _ruggedness(values: Dictionary, col: int, row: int, width: int, height: int) -> float:
-	var center: float = float(values[_point_key(col, row)].get("elevation", 0.0))
+	var center: float = values[_point_key(col, row)].elevation
 	var max_delta: float = 0.0
 	for direction in _directions8():
 		var next: Vector2i = Vector2i(col + direction.x, row + direction.y)
 		if next.x < 0 or next.x >= width or next.y < 0 or next.y >= height:
 			continue
-		var neighbor: float = float(values[_point_key(next.x, next.y)].get("elevation", 0.0))
+		var neighbor: float = values[_point_key(next.x, next.y)].elevation
 		max_delta = max(max_delta, abs(center - neighbor))
 	return max_delta
 

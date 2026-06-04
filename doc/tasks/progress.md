@@ -42,6 +42,7 @@
 - [x] 定义 `MapGenerationDebugWriter`
 - [x] 从 `MapLoader` 抽离生成逻辑
 - [x] 从 `MapLoader` 抽离调试输出
+- [x] 实现 `MapGenerationValues` 中间结构
 - [x] 记录抽离前后同 seed 生成一致的人工验证策略
 - [x] 实现地图生成器预览场景
 - [x] 实现 seed 输入和重新生成

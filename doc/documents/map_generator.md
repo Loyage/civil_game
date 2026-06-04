@@ -5,6 +5,7 @@
 ## 当前实现范围
 
 - `MapGenerationConfig` 承载地图生成配置。
+- `MapGenerationValues` 承载生成过程中的环境场和河流中间数据。
 - `MapGenerator.generate(config)` 根据配置生成 `MapState`。
 - `MapGenerationDebugWriter` 负责把生成结果写入调试 JSON。
 - `MapLoader` 保留原有 `load_generated_map()` 入口，但内部只负责读取 JSON、构建配置、调用生成器和触发调试输出。
@@ -15,6 +16,7 @@
 | 文件 | 职责 |
 | --- | --- |
 | `game/scripts/map_generation/map_generation_config.gd` | 地图生成配置对象，保存 seed、尺寸、阈值、生成参数和起始城市。 |
+| `game/scripts/map_generation/map_generation_values.gd` | 地图生成中间数据，保存环境场和河流字段。 |
 | `game/scripts/map_generation/map_generator.gd` | 世界地图生成器，生成环境场、河流、地貌派生和渲染辅助路径。 |
 | `game/scripts/map_generation/map_generation_debug_writer.gd` | 调试输出写入器，负责写出 `user://generated_map.json`。 |
 | `game/scenes/dev/MapGeneratorPreview.tscn` | 开发期地图生成器预览场景。 |
@@ -102,9 +104,20 @@ game/scenes/dev/MapGeneratorPreview.tscn
 
 生成器可以生成服务于渲染的辅助数据，例如 `river_path_points` 和 `ridge_path_points`，但不直接执行绘制。
 
+## 中间数据
+
+`MapGenerator` 使用 `tile_key -> MapGenerationValues` 字典保存生成过程中的环境场。`MapGenerationValues` 当前包含：
+
+- `elevation`
+- `rainfall`
+- `temperature`
+- `river_strength`
+- `river_flow`
+
+这样可以避免继续把单个地块的中间字段存成裸 Dictionary，同时保留通过 `tile_key` 快速查询整张地图环境场的能力。
+
 ## 当前限制
 
-- 尚未实现 `MapGenerationValues` 中间结构，环境场仍使用临时 Dictionary。
 - 抽离前后同 seed 一致性当前采用人工验证说明，尚未做自动回归测试。
 - 预览工具暂不支持 PNG 导出。
 - 预览工具暂不支持参数 preset。

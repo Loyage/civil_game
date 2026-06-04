@@ -50,7 +50,7 @@ game/scripts/dev/map_generator_preview.gd
 - `map_generation_config.gd`：强类型配置对象，承载 width、height、seed、thresholds、generation 参数和 start_city。
 - `map_generator.gd`：主生成器入口，提供 `generate(config) -> MapState`。
 - `map_generation_debug_writer.gd`：把生成结果写入 `user://generated_map.json` 等调试输出。
-- `map_generation_values.gd`：可选的中间结构，用于保存环境场和河流字段，替代当前临时 Dictionary。
+- `map_generation_values.gd`：中间结构，用于保存环境场和河流字段，替代当前临时 Dictionary value。
 - `MapGeneratorPreview.tscn`：开发期地图生成预览场景，用于输入 seed 和参数后直观看到生成结果。
 - `map_generator_preview.gd`：预览场景脚本，只调用正式 `MapGenerator.generate(config)`，不实现独立生成逻辑。
 
@@ -106,6 +106,8 @@ MapRoot
 - 初始 `river_flow`
 
 这一阶段必须保持 seed 可复现，且不能依赖节点或渲染状态。
+
+环境场和河流字段由 `MapGenerationValues` 承载。`MapGenerator` 仍使用 `tile_key -> MapGenerationValues` 字典保存整张地图的中间场，避免在生成阶段继续传递裸 Dictionary value。
 
 ### 阶段 3：河流生成
 
@@ -230,7 +232,8 @@ MapGeneratorPreview
 
 ### M4 - 中间数据清理
 
-- 评估是否用 `MapGenerationValues` 替代临时 Dictionary。
+- 新建 `MapGenerationValues`。
+- 用 `MapGenerationValues` 替代临时 Dictionary value。
 - 明确环境场、河流字段和派生字段的生命周期。
 - 为后续测试和算法扩展提供稳定结构。
 
@@ -258,6 +261,18 @@ MapGeneratorPreview
 - 支持保存 seed + 参数 preset。
 - 支持导出 PNG。
 - 支持同屏对比 seed 或参数差异。
+- 当前不纳入首版完成范围，后续作为增强功能处理。
+
+## 当前 checklist
+
+- [x] M0 明确 `map_generator` 职责边界
+- [x] M1 新建 `MapGenerationConfig`
+- [x] M2 新建 `MapGenerator` 并抽离主生成逻辑
+- [x] M3 新建 `MapGenerationDebugWriter` 并抽离调试输出
+- [x] M4 新建并接入 `MapGenerationValues`
+- [x] M5 采用人工验证说明，不新增自动测试代码
+- [x] M6 新建地图生成器预览场景
+- [ ] M7 预览工具 preset、PNG 导出和同屏对比
 
 ### M8 - 预览交互
 
