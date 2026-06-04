@@ -2,6 +2,10 @@ class_name LocalMapGenerator
 extends RefCounted
 
 const LocalMapStateScript := preload("res://game/scripts/local_map/local_map_state.gd")
+const MapGenerationConfigScript := preload("res://game/scripts/map_generation/map_generation_config.gd")
+const WorldSkeletonScript := preload("res://game/scripts/world_generation/world_skeleton.gd")
+const WorldSkeletonGeneratorScript := preload("res://game/scripts/world_generation/world_skeleton_generator.gd")
+const WorldFunctionSamplerScript := preload("res://game/scripts/world_generation/world_function_sampler.gd")
 
 const SEA_LEVEL := 0
 const MIN_HEIGHT := -256
@@ -9,11 +13,18 @@ const MAX_HEIGHT := 256
 const TILE_GLOBAL_STEP := 255
 
 var world_seed: int
+var config
+var skeleton
+var sampler
 
-func _init(init_world_seed: int = 0) -> void:
+func _init(init_world_seed: int = 0, init_config = null) -> void:
 	world_seed = init_world_seed
+	config = _build_config(init_config)
+	skeleton = WorldSkeletonGeneratorScript.new().generate(config)
+	sampler = WorldFunctionSamplerScript.new(skeleton)
 
 func generate(tile):
+	_prepare_sampler_for_tile(tile)
 	var state = LocalMapStateScript.new()
 	state.world_seed = world_seed
 	state.tile_key = tile.tile_key
@@ -27,40 +38,55 @@ func generate(tile):
 	return state
 
 func _generate_heights(state, tile) -> void:
-	var total = 0
-	var target_height = _tile_elevation_to_height(tile.elevation)
+	var total := 0
 	for y in range(state.height):
 		for x in range(state.width):
-			var global_x = state.tile_col * TILE_GLOBAL_STEP + x
-			var global_y = state.tile_row * TILE_GLOBAL_STEP + y
-			var height = _sample_height(global_x, global_y, target_height, tile, _edge_weight(state, x, y))
-			var index = state.index(x, y)
+			var global_x: int = state.global_cell_x(x)
+			var global_y: int = state.global_cell_y(y)
+			var height: int = _sample_height(global_x, global_y)
+			var index: int = state.index(x, y)
 			state.heights[index] = height
 			total += height
 	state.average_height = int(round(float(total) / float(state.width * state.height)))
 
-func _sample_height(global_x: int, global_y: int, target_height: int, tile, edge_weight: float) -> int:
-	var low = _centered_smooth_noise(global_x, global_y, 0, 24) * 90.0
-	var mid = _centered_smooth_noise(global_x, global_y, 1, 8) * 42.0
-	var high = _centered_smooth_noise(global_x, global_y, 2, 3) * 16.0
-	var height = low + mid + high
-	height += float(target_height) * edge_weight
+func _sample_height(global_x: int, global_y: int) -> int:
+	return clampi(sampler.sample_height(global_x, global_y), MIN_HEIGHT, MAX_HEIGHT)
 
-	if tile.is_mountain():
-		height += (72.0 + _value_noise(global_x, global_y, 6) * 58.0) * edge_weight
-	elif tile.is_hill():
-		height += (24.0 + _value_noise(global_x, global_y, 7) * 28.0) * edge_weight
+func _prepare_sampler_for_tile(tile) -> void:
+	var local_skeleton = WorldSkeletonScript.new()
+	local_skeleton.seed = skeleton.seed
+	local_skeleton.big_map_size = skeleton.big_map_size
+	local_skeleton.sub_map_size = skeleton.sub_map_size
+	local_skeleton.sea_level = skeleton.sea_level
+	local_skeleton.continent_bias = skeleton.continent_bias
+	local_skeleton.mountain_ridges = _filter_structures_for_tile(tile, skeleton.mountain_ridges)
+	local_skeleton.rivers = _filter_structures_for_tile(tile, skeleton.rivers)
+	sampler = WorldFunctionSamplerScript.new(local_skeleton)
 
-	if tile.is_water():
-		height -= 96.0 * edge_weight
-	elif tile.is_lake() or tile.is_swamp():
-		height -= 32.0 * edge_weight
+func _filter_structures_for_tile(tile, structures: Array) -> Array:
+	var result: Array = []
+	var tile_rect := Rect2(
+		Vector2(float(tile.offset.col * TILE_GLOBAL_STEP), float(tile.offset.row * TILE_GLOBAL_STEP)),
+		Vector2(float(LocalMapStateScript.WIDTH), float(LocalMapStateScript.HEIGHT))
+	)
+	for structure in structures:
+		var influence_width := float(structure.get("width", 0.0))
+		if _polyline_intersects_rect(structure["points"], tile_rect, influence_width + 4.0):
+			result.append(structure)
+	return result
 
-	return clampi(int(round(height)), MIN_HEIGHT, MAX_HEIGHT)
+func _polyline_intersects_rect(points: Array, rect: Rect2, padding: float) -> bool:
+	if points.is_empty():
+		return false
+	for index in range(points.size() - 1):
+		if _segment_bounds(points[index], points[index + 1]).grow(padding).intersects(rect):
+			return true
+	return false
 
-func _edge_weight(state, x: int, y: int) -> float:
-	var distance_to_edge = min(min(x, y), min(state.width - 1 - x, state.height - 1 - y))
-	return clampf(float(distance_to_edge) / 32.0, 0.0, 1.0)
+func _segment_bounds(a: Vector2, b: Vector2) -> Rect2:
+	var min_point := Vector2(min(a.x, b.x), min(a.y, b.y))
+	var max_point := Vector2(max(a.x, b.x), max(a.y, b.y))
+	return Rect2(min_point, max_point - min_point)
 
 func _apply_river(state, tile) -> void:
 	if not tile.has_river:
@@ -233,31 +259,16 @@ func _slope_at(state, x: int, y: int) -> int:
 		max_delta = max(max_delta, abs(center - state.heights[state.index(nx, ny)]))
 	return max_delta
 
-func _tile_elevation_to_height(elevation: float) -> int:
-	if elevation < -1.0 or elevation > 1.0:
-		return clampi(int(round(elevation)), MIN_HEIGHT, MAX_HEIGHT)
-	return clampi(int(round(lerpf(float(MIN_HEIGHT), float(MAX_HEIGHT), elevation))), MIN_HEIGHT, MAX_HEIGHT)
-
-func _centered_smooth_noise(global_x: int, global_y: int, salt: int, radius: int) -> float:
-	var total = 0.0
-	var weight = 0.0
-	var stride: int = maxi(1, int(radius / 4))
-	for dy in range(-radius, radius + 1, stride):
-		for dx in range(-radius, radius + 1, stride):
-			var distance = Vector2(dx, dy).length() + 1.0
-			var sample_weight = 1.0 / distance
-			total += _value_noise(global_x + dx, global_y + dy, salt) * sample_weight
-			weight += sample_weight
-	return total / weight - 0.5
-
-func _value_noise(global_x: int, global_y: int, salt: int) -> float:
-	var n = int(world_seed) ^ int(global_x * 374761393) ^ int(global_y * 668265263) ^ int(salt * 1442695041)
-	n = (n ^ (n >> 13)) * 1274126177
-	n = n ^ (n >> 16)
-	return float(n & 0xffff) / 65535.0
-
 func _cell_key(cell: Vector2i) -> String:
 	return "%d:%d" % [cell.x, cell.y]
+
+func _build_config(init_config):
+	var result = MapGenerationConfigScript.new()
+	if init_config != null:
+		result.load_from_dictionary(init_config.to_dictionary())
+	result.seed = world_seed
+	result.sub_map_size = LocalMapStateScript.WIDTH
+	return result
 
 func _axis_sign(value: float) -> int:
 	if value < -0.1:

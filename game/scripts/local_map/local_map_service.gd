@@ -1,10 +1,12 @@
 class_name LocalMapService
 extends RefCounted
 
-const CACHE_VERSION := 1
+const CACHE_VERSION := 2
 const CACHE_MAGIC := "CLM1"
 const CACHE_ROOT := "user://local_maps"
+const MAP_CONFIG_PATH := "res://game/data/maps/map_generation_config.json"
 
+const MapGenerationConfigScript := preload("res://game/scripts/map_generation/map_generation_config.gd")
 const LocalMapStateScript := preload("res://game/scripts/local_map/local_map_state.gd")
 const LocalMapGeneratorScript := preload("res://game/scripts/local_map/local_map_generator.gd")
 
@@ -18,7 +20,7 @@ func load_or_generate(tile):
 	if cached != null:
 		return cached
 
-	var generator = LocalMapGeneratorScript.new(world_seed)
+	var generator = LocalMapGeneratorScript.new(world_seed, _load_generation_config())
 	var state = generator.generate(tile)
 	_write_cache(state)
 	return state
@@ -98,3 +100,19 @@ func _write_cache(state) -> void:
 
 func _cache_path_from_state(state) -> String:
 	return "%s/%d/v%d/%s.bin" % [CACHE_ROOT, state.world_seed, CACHE_VERSION, state.tile_key]
+
+func _load_generation_config():
+	var config = MapGenerationConfigScript.new()
+	var file := FileAccess.open(MAP_CONFIG_PATH, FileAccess.READ)
+	if file == null:
+		config.seed = world_seed
+		return config
+
+	var json := JSON.new()
+	if json.parse(file.get_as_text()) != OK or typeof(json.data) != TYPE_DICTIONARY:
+		config.seed = world_seed
+		return config
+
+	config.load_from_dictionary(json.data)
+	config.seed = world_seed
+	return config

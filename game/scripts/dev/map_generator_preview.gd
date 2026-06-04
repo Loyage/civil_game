@@ -557,7 +557,7 @@ func _show_selected_tile_local_map() -> void:
 	if tile == null:
 		return
 
-	local_map_state = LocalMapGeneratorScript.new(int(seed_input.value)).generate(tile)
+	local_map_state = LocalMapGeneratorScript.new(int(seed_input.value), _build_config_from_inputs()).generate(tile)
 	preview_mode = MODE_LOCAL
 	selected_cell = Vector2i(-1, -1)
 	local_map_button.text = "返回大地图"

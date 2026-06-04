@@ -8,6 +8,7 @@
 - 小地图第一次进入时通过 `LocalMapService.load_or_generate(tile)` 读取缓存或生成。
 - 缓存使用 Godot 二进制文件，路径为 `user://local_maps/{seed}/v{version}/{tile_key}.bin`。
 - 小地图高度范围为 `-256..256` 整数。
+- 小地图高度逐地格复用世界生成器的 `WorldSkeletonGenerator + WorldFunctionSampler`，不再使用旧版本地噪声高度场。
 - 水体规则为 `height < 0`。
 - 河流地块会根据入口/出口生成基础寻路河道，并压低河床。
 - `LocalMapRoot` 用 `ImageTexture` 渲染 `256 x 256` 高度图，避免为每个地格创建节点。
@@ -37,7 +38,88 @@ global_cell_y = tile_row * 255 + cell_y
 
 因此右侧相邻地块的 `cell(0, y)` 与当前地块的 `cell(255, y)` 会采样同一个全局坐标。
 
-边界高度只使用全局高度场。地块海拔、山脉、水体等宏观约束从边界向内部渐入，最外圈权重为 0，避免相邻地块因为属性不同而出现高度缝。河流可以标记边界地格，但河床下切不会改写最外圈高度。
+边界高度只使用全局高度场。当前全局高度场来自 `WorldFunctionSampler.sample_height(global_cell_x, global_cell_y)`，因此同一种子和同一配置下，相邻小地图共享边界的高度采样结果一致。河流可以标记边界地格，但河床下切不会改写最外圈高度。
+
+## 当前生成算法
+
+`LocalMapGenerator.generate(tile)` 当前执行顺序：
+
+```text
+LocalMapGenerator.generate(tile)
+  -> _generate_heights()
+      -> WorldSkeletonGenerator.generate(config)
+      -> WorldFunctionSampler.sample_height(global_x, global_y)
+  -> _apply_river()
+      -> _find_river_path()
+      -> _carve_river_at()
+  -> _derive_flags_and_slopes()
+```
+
+### 高度生成
+
+小地图每个地格先转换为全局地格坐标：
+
+```text
+global_x = tile_col * 255 + cell_x
+global_y = tile_row * 255 + cell_y
+```
+
+然后调用：
+
+```text
+WorldFunctionSampler.sample_height(global_x, global_y)
+```
+
+高度值被限制在：
+
+```text
+-256..256
+```
+
+这样小地图和大地图使用同一套世界骨架和连续函数：大陆衰减、山脉抬升、河流下切和多层高度噪声都来自 `world_generation` 模块。大地图是低分辨率摘要，小地图是同一世界函数的高分辨率采样。
+
+生成单个小地图前，`LocalMapGenerator` 会从完整 `WorldSkeleton` 中筛选当前地块附近可能产生影响的山脉和河流线段，构造局部骨架副本再交给 `WorldFunctionSampler`。这样仍然使用同一套采样方法，但避免每个地格都遍历全世界所有山脉和河流。
+
+运行时 `LocalMapService` 会读取 `game/data/maps/map_generation_config.json` 构造配置，并覆盖当前 `world_seed`；开发期 `MapGeneratorPreview` 会把当前预览控件中的配置传给 `LocalMapGenerator`，避免预览参数和小地图生成参数分叉。
+
+### 河流生成
+
+河流仍使用当前小地图局部寻路算法：
+
+1. 根据大地图 `river_path_points` 和 `river_flow` 推导入口和出口。
+2. 使用 8 邻域 A* 风格寻路。
+3. 成本优先选择低处、缓坡和接近目标方向的地格。
+4. 对寻路得到的河道执行河床下切。
+5. 最外圈边界高度不被河床下切改写，以保留共享边界高度连续性。
+
+当前没有直接使用 `WorldFunctionSampler.sample_river_strength()` 标记整片河流范围。这样可以保证大地图指定的入口/出口连通，但水文真实性仍是原型级。
+
+### 水体和坡度
+
+水体规则保持简单：
+
+```text
+height < 0 => water
+```
+
+坡度使用当前地格与周围 8 个邻居的最大高度差：
+
+```text
+slope = max(abs(center_height - neighbor_height))
+```
+
+`average_height` 在生成高度后统计一次，并在河流下切和水体/坡度派生后重新统计。
+
+## 缓存版本
+
+本次算法改为复用 `WorldFunctionSampler` 后，缓存版本升级为：
+
+```text
+CACHE_VERSION = 2
+LocalMapState.version = 2
+```
+
+旧版缓存路径 `v1` 不会被读取，新生成的小地图会写入 `v2` 目录。
 
 ## 集成流程
 
@@ -55,5 +137,6 @@ global_cell_y = tile_row * 255 + cell_y
 
 - 小地图地格信息面板尚未实现。
 - 河流寻路是基础成本寻路，还没有完整水文约束。
-- 山脉目前只整体抬高山地地块，尚未沿大地图 `ridge_path_points` 生成局部山脊。
+- 山脉目前通过全局高度采样自然体现，尚未沿大地图 `ridge_path_points` 额外强化局部山脊。
+- 湖泊、湿地、植被和资源暂未在小地图数据结构中细化。
 - 缓存主体使用 `store_var()` 写入 Dictionary，后续如果需要更小体积，可以改成手写压缩二进制格式。
