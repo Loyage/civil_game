@@ -29,6 +29,7 @@
               godot_4-export-templates-bin
               jq
               just
+              mdbook
               ripgrep
               tree
             ];

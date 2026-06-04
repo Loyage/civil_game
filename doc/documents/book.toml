@@ -1,0 +1,15 @@
+[book]
+authors = ["civilization contributors"]
+description = "Runtime module design documents for the civilization project."
+language = "zh-CN"
+src = "."
+title = "Civilization Runtime Design"
+
+[build]
+build-dir = "../../target/documents-book"
+create-missing = false
+
+[output.html]
+default-theme = "light"
+git-repository-url = ""
+no-section-label = false
