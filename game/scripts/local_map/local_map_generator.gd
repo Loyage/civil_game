@@ -10,16 +10,17 @@ const WorldFunctionSamplerScript := preload("res://game/scripts/world_generation
 const SEA_LEVEL := 0
 const MIN_HEIGHT := -256
 const MAX_HEIGHT := 256
-const TILE_GLOBAL_STEP := 255
 
 var world_seed: int
 var config
 var skeleton
 var sampler
+var local_map_size: int
 
 func _init(init_world_seed: int = 0, init_config = null) -> void:
 	world_seed = init_world_seed
 	config = _build_config(init_config)
+	local_map_size = max(2, int(config.sub_map_size))
 	skeleton = WorldSkeletonGeneratorScript.new().generate(config)
 	sampler = WorldFunctionSamplerScript.new(skeleton)
 
@@ -30,6 +31,8 @@ func generate(tile):
 	state.tile_key = tile.tile_key
 	state.tile_col = tile.offset.col
 	state.tile_row = tile.offset.row
+	state.width = local_map_size
+	state.height = local_map_size
 	state.resize_arrays()
 
 	_generate_heights(state, tile)
@@ -66,8 +69,8 @@ func _prepare_sampler_for_tile(tile) -> void:
 func _filter_structures_for_tile(tile, structures: Array) -> Array:
 	var result: Array = []
 	var tile_rect := Rect2(
-		Vector2(float(tile.offset.col * TILE_GLOBAL_STEP), float(tile.offset.row * TILE_GLOBAL_STEP)),
-		Vector2(float(LocalMapStateScript.WIDTH), float(LocalMapStateScript.HEIGHT))
+		Vector2(float(tile.offset.col * _tile_global_step()), float(tile.offset.row * _tile_global_step())),
+		Vector2(float(local_map_size), float(local_map_size))
 	)
 	for structure in structures:
 		var influence_width := float(structure.get("width", 0.0))
@@ -152,21 +155,21 @@ func _river_point(tile, index: int, fallback: Vector2) -> Vector2:
 
 func _normalized_to_cell(point: Vector2) -> Vector2i:
 	return Vector2i(
-		clampi(int(round(point.x * float(LocalMapStateScript.WIDTH - 1))), 0, LocalMapStateScript.WIDTH - 1),
-		clampi(int(round(point.y * float(LocalMapStateScript.HEIGHT - 1))), 0, LocalMapStateScript.HEIGHT - 1)
+		clampi(int(round(point.x * float(local_map_size - 1))), 0, local_map_size - 1),
+		clampi(int(round(point.y * float(local_map_size - 1))), 0, local_map_size - 1)
 	)
 
 func _edge_cell(direction: Vector2i) -> Vector2i:
-	var x = 127
-	var y = 127
+	var x: int = int(local_map_size / 2)
+	var y: int = int(local_map_size / 2)
 	if direction.x < 0:
 		x = 0
 	elif direction.x > 0:
-		x = LocalMapStateScript.WIDTH - 1
+		x = local_map_size - 1
 	if direction.y < 0:
 		y = 0
 	elif direction.y > 0:
-		y = LocalMapStateScript.HEIGHT - 1
+		y = local_map_size - 1
 	return Vector2i(x, y)
 
 func _river_neighbors(cell: Vector2i, width: int, height: int) -> Array[Vector2i]:
@@ -267,8 +270,11 @@ func _build_config(init_config):
 	if init_config != null:
 		result.load_from_dictionary(init_config.to_dictionary())
 	result.seed = world_seed
-	result.sub_map_size = LocalMapStateScript.WIDTH
+	result.sub_map_size = max(2, int(result.sub_map_size))
 	return result
+
+func _tile_global_step() -> int:
+	return max(1, local_map_size - 1)
 
 func _axis_sign(value: float) -> int:
 	if value < -0.1:

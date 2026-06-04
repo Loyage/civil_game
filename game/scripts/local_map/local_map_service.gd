@@ -11,16 +11,18 @@ const LocalMapStateScript := preload("res://game/scripts/local_map/local_map_sta
 const LocalMapGeneratorScript := preload("res://game/scripts/local_map/local_map_generator.gd")
 
 var world_seed: int
+var generation_config
 
 func _init(init_world_seed: int = 0) -> void:
 	world_seed = init_world_seed
+	generation_config = _load_generation_config()
 
 func load_or_generate(tile):
 	var cached = _load_cache(tile)
 	if cached != null:
 		return cached
 
-	var generator = LocalMapGeneratorScript.new(world_seed, _load_generation_config())
+	var generator = LocalMapGeneratorScript.new(world_seed, generation_config)
 	var state = generator.generate(tile)
 	_write_cache(state)
 	return state
@@ -58,7 +60,8 @@ func _load_cache(tile):
 	state.height = int(data.get("height", 0))
 	state.average_height = int(data.get("average_height", 0))
 
-	if state.world_seed != world_seed or state.tile_key != tile.tile_key or state.width != LocalMapStateScript.WIDTH or state.height != LocalMapStateScript.HEIGHT:
+	var expected_size := max(2, int(generation_config.sub_map_size))
+	if state.world_seed != world_seed or state.tile_key != tile.tile_key or state.width != expected_size or state.height != expected_size:
 		return null
 
 	state.heights = data.get("heights", PackedInt32Array())

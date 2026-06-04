@@ -2,7 +2,7 @@
 
 ## 目标
 
-小地图首版渲染目标是快速、清晰地展示 `256 x 256` 地格的高度、水体、河流和基础地貌，不追求精细美术。
+小地图首版渲染目标是快速、清晰地展示 `sub_map_size x sub_map_size` 地格的高度、水体、河流和基础地貌，不追求精细美术。
 
 ## 场景规划
 
@@ -16,7 +16,7 @@ game/scripts/local_map/local_map_root.gd
 理由：
 
 - 大地图和小地图职责不同
-- 小地图以 256x256 地格高度图为核心，不适合复用当前大地图 `TileMapLayer`
+- 小地图以可配置边长的地格高度图为核心，不适合复用当前大地图 `TileMapLayer`
 - 独立场景便于上层 `core_root.gd` 切换显示和管理返回逻辑
 - 小地图根节点使用 `CanvasLayer`，避免被大地图 `Camera2D` 的 canvas transform 影响
 
@@ -28,7 +28,7 @@ game/scripts/local_map/local_map_root.gd
 每个地格 1 像素，生成 `ImageTexture` 后用 `TextureRect` 放大显示
 ```
 
-渲染结果是 `256 x 256` 高度图：
+渲染结果是 `sub_map_size x sub_map_size` 高度图：
 
 - 高度越高颜色越亮
 - `height < 0` 显示为水色
@@ -59,7 +59,7 @@ game/scripts/local_map/local_map_root.gd
 
 ## 性能注意
 
-`256 x 256` 每格 1 像素可以直接生成 `ImageTexture`：
+每个地格 1 像素可以直接生成 `ImageTexture`：
 
 1. 创建 `Image`
 2. 遍历高度数组写入像素

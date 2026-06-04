@@ -1,10 +1,7 @@
 class_name LocalMapState
 extends RefCounted
 
-const WIDTH := 256
-const HEIGHT := 256
-const CELL_COUNT := WIDTH * HEIGHT
-const TILE_GLOBAL_STEP := 255
+const DEFAULT_SIZE := 256
 
 var version: int
 var world_seed: int
@@ -25,8 +22,8 @@ func _init() -> void:
 	tile_key = ""
 	tile_col = 0
 	tile_row = 0
-	width = WIDTH
-	height = HEIGHT
+	width = DEFAULT_SIZE
+	height = DEFAULT_SIZE
 	heights = PackedInt32Array()
 	water_flags = PackedByteArray()
 	river_flags = PackedByteArray()
@@ -47,7 +44,7 @@ func is_valid_cell(x: int, y: int) -> bool:
 	return x >= 0 and x < width and y >= 0 and y < height
 
 func global_cell_x(x: int) -> int:
-	return tile_col * TILE_GLOBAL_STEP + x
+	return tile_col * max(1, width - 1) + x
 
 func global_cell_y(y: int) -> int:
-	return tile_row * TILE_GLOBAL_STEP + y
+	return tile_row * max(1, height - 1) + y

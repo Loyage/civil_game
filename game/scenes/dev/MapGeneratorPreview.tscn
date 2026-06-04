@@ -72,16 +72,16 @@ max_value = 256.0
 value = 40.0
 rounded = true
 
-[node name="HeightLabel" type="Label" parent="Root/Controls/Margin/Column"]
+[node name="SubMapSizeLabel" type="Label" parent="Root/Controls/Margin/Column"]
 layout_mode = 2
-text = "Height"
+text = "Sub Map Size"
 
-[node name="HeightInput" type="SpinBox" parent="Root/Controls/Margin/Column"]
+[node name="SubMapSizeInput" type="SpinBox" parent="Root/Controls/Margin/Column"]
 unique_name_in_owner = true
 layout_mode = 2
-min_value = 8.0
-max_value = 256.0
-value = 20.0
+min_value = 32.0
+max_value = 512.0
+value = 256.0
 rounded = true
 
 [node name="RiverCountLabel" type="Label" parent="Root/Controls/Margin/Column"]
@@ -125,7 +125,7 @@ text = "显示走向"
 [node name="GenerateButton" type="Button" parent="Root/Controls/Margin/Column"]
 unique_name_in_owner = true
 layout_mode = 2
-text = "生成"
+text = "生成地图"
 
 [node name="RandomSeedButton" type="Button" parent="Root/Controls/Margin/Column"]
 unique_name_in_owner = true

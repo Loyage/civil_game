@@ -42,7 +42,7 @@ const TERRAIN_COLORS := {
 
 @onready var seed_input: SpinBox = %SeedInput
 @onready var width_input: SpinBox = %WidthInput
-@onready var height_input: SpinBox = %HeightInput
+@onready var sub_map_size_input: SpinBox = %SubMapSizeInput
 @onready var river_count_input: SpinBox = %RiverCountInput
 @onready var continent_bias_input: SpinBox = %ContinentBiasInput
 @onready var view_mode_button: OptionButton = %ViewModeButton
@@ -76,7 +76,7 @@ func _ready() -> void:
 	direction_overlay_toggle.toggled.connect(func(_enabled: bool) -> void: _update_direction_overlay_visibility())
 	preview_viewport.resized.connect(_apply_view_transform)
 	preview_viewport.gui_input.connect(_handle_preview_gui_input)
-	_generate_preview()
+	_show_initial_empty_preview()
 	if DisplayServer.get_name() == "headless":
 		call_deferred("_quit_headless_preview")
 
@@ -118,7 +118,26 @@ func _generate_preview() -> void:
 
 func _randomize_seed() -> void:
 	seed_input.value = randi_range(1, 999999999)
-	_generate_preview()
+
+func _show_initial_empty_preview() -> void:
+	map_state = null
+	local_map_state = null
+	preview_mode = MODE_WORLD
+	base_map_size = Vector2.ZERO
+	zoom_level = 1.0
+	pan_offset = Vector2.ZERO
+	selected_tile = Vector2i(-1, -1)
+	selected_cell = Vector2i(-1, -1)
+	map_texture.texture = null
+	map_texture.size = Vector2.ZERO
+	_clear_direction_overlay()
+	_update_selection_marker()
+	local_map_button.text = "查看小地图"
+	local_map_button.disabled = true
+	view_mode_button.disabled = false
+	direction_overlay_toggle.disabled = false
+	summary_label.text = "未生成地图：调整参数后点击“生成地图”。"
+	tile_info_label.text = "选中地块：未选择"
 
 func _build_config_from_inputs():
 	var config = MapGenerationConfigScript.new()
@@ -126,6 +145,7 @@ func _build_config_from_inputs():
 	config.big_map_size = int(width_input.value)
 	config.width = config.big_map_size
 	config.height = config.big_map_size
+	config.sub_map_size = int(sub_map_size_input.value)
 	config.start_city_col = clampi(int(config.big_map_size / 2), 0, max(0, config.big_map_size - 1))
 	config.start_city_row = clampi(int(config.big_map_size / 2), 0, max(0, config.big_map_size - 1))
 	config.start_city_name = "Preview"

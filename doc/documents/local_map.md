@@ -1,17 +1,18 @@
 # Local Map Module Design
 
-`local_map` 模块负责在玩家进入世界地图单个地块时，按需生成并展示该地块内部的 `256 x 256` 局部地图。当前版本实现基础可用流程，不提前生成所有地块的小地图。
+`local_map` 模块负责在玩家进入世界地图单个地块时，按需生成并展示该地块内部的局部地图。小地图边长由地图生成配置 `sub_map_size` 控制，默认值为 `256`。当前版本实现基础可用流程，不提前生成所有地块的小地图。
 
 ## 当前实现范围
 
 - 双击大地图地块进入小地图。
 - 小地图第一次进入时通过 `LocalMapService.load_or_generate(tile)` 读取缓存或生成。
 - 缓存使用 Godot 二进制文件，路径为 `user://local_maps/{seed}/v{version}/{tile_key}.bin`。
+- 小地图边长由 `sub_map_size` 配置控制；预览工具中可以通过 `Sub Map Size` 调整。
 - 小地图高度范围为 `-256..256` 整数。
 - 小地图高度逐地格复用世界生成器的 `WorldSkeletonGenerator + WorldFunctionSampler`，不再使用旧版本地噪声高度场。
 - 水体规则为 `height < 0`。
 - 河流地块会根据入口/出口生成基础寻路河道，并压低河床。
-- `LocalMapRoot` 用 `ImageTexture` 渲染 `256 x 256` 高度图，避免为每个地格创建节点。
+- `LocalMapRoot` 用 `ImageTexture` 渲染高度图，避免为每个地格创建节点。
 - `LocalMapRoot` 使用 `CanvasLayer` 固定在屏幕坐标渲染，不受大地图相机平移和缩放影响。
 - 小地图视口支持右键拖动，以及按住 Ctrl 后滚轮缩放。
 - 小地图视口支持左键点击地格选中，悬停只显示预览标记，不更新左下角信息面板。
@@ -29,14 +30,14 @@
 
 ## 边界连续性
 
-小地图内部坐标为 `cell(x, y)`，范围 `0..255`。为了让相邻地块共享边界高度完全一致，全局采样坐标使用：
+小地图内部坐标为 `cell(x, y)`，范围 `0..sub_map_size - 1`。为了让相邻地块共享边界高度完全一致，全局采样坐标使用：
 
 ```text
-global_cell_x = tile_col * 255 + cell_x
-global_cell_y = tile_row * 255 + cell_y
+global_cell_x = tile_col * (sub_map_size - 1) + cell_x
+global_cell_y = tile_row * (sub_map_size - 1) + cell_y
 ```
 
-因此右侧相邻地块的 `cell(0, y)` 与当前地块的 `cell(255, y)` 会采样同一个全局坐标。
+因此右侧相邻地块的 `cell(0, y)` 与当前地块的 `cell(sub_map_size - 1, y)` 会采样同一个全局坐标。
 
 边界高度只使用全局高度场。当前全局高度场来自 `WorldFunctionSampler.sample_height(global_cell_x, global_cell_y)`，因此同一种子和同一配置下，相邻小地图共享边界的高度采样结果一致。河流可以标记边界地格，但河床下切不会改写最外圈高度。
 
@@ -60,8 +61,8 @@ LocalMapGenerator.generate(tile)
 小地图每个地格先转换为全局地格坐标：
 
 ```text
-global_x = tile_col * 255 + cell_x
-global_y = tile_row * 255 + cell_y
+global_x = tile_col * (sub_map_size - 1) + cell_x
+global_y = tile_row * (sub_map_size - 1) + cell_y
 ```
 
 然后调用：
@@ -80,7 +81,7 @@ WorldFunctionSampler.sample_height(global_x, global_y)
 
 生成单个小地图前，`LocalMapGenerator` 会从完整 `WorldSkeleton` 中筛选当前地块附近可能产生影响的山脉和河流线段，构造局部骨架副本再交给 `WorldFunctionSampler`。这样仍然使用同一套采样方法，但避免每个地格都遍历全世界所有山脉和河流。
 
-运行时 `LocalMapService` 会读取 `game/data/maps/map_generation_config.json` 构造配置，并覆盖当前 `world_seed`；开发期 `MapGeneratorPreview` 会把当前预览控件中的配置传给 `LocalMapGenerator`，避免预览参数和小地图生成参数分叉。
+运行时 `LocalMapService` 会读取 `game/data/maps/map_generation_config.json` 构造配置，并覆盖当前 `world_seed`；开发期 `MapGeneratorPreview` 会把当前预览控件中的配置传给 `LocalMapGenerator`，其中 `Sub Map Size` 会写入 `config.sub_map_size`，避免预览参数和小地图生成参数分叉。
 
 ### 河流生成
 
@@ -120,6 +121,8 @@ LocalMapState.version = 2
 ```
 
 旧版缓存路径 `v1` 不会被读取，新生成的小地图会写入 `v2` 目录。
+
+同一个缓存版本下，缓存读取还会校验 `width` 和 `height` 是否等于当前配置的 `sub_map_size`。如果玩家调整小地图边长，旧尺寸缓存不会被复用，会重新生成对应尺寸的小地图。
 
 ## 集成流程
 

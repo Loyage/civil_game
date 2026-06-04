@@ -29,7 +29,7 @@ var average_height: int
 
 说明：
 
-- `width` 和 `height` 首版固定为 `256`
+- `width` 和 `height` 来自地图生成配置 `sub_map_size`
 - `heights` 长度为 `65536`
 - 一维索引：`index = y * width + x`
 - `water_flags`、`river_flags` 使用紧凑数组表达派生状态

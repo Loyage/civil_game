@@ -67,10 +67,12 @@ game/scenes/dev/MapGeneratorPreview.tscn
 
 - 输入 seed。
 - 输入 width / height。
+- 调整 `sub_map_size`，用于控制进入单个大地图地块后的局部地图边长。
 - 调整 `major_river_count`。
 - 调整 `continent_bias`。
-- 点击“生成”重新生成地图。
-- 点击“随机 Seed”生成随机种子并刷新。
+- 打开场景时不自动生成地图，右侧预览区保持空白并提示调整参数后生成。
+- 点击“生成地图”后才生成完整世界地图。
+- 点击“随机 Seed”只更新 seed 输入框，不立即生成地图。
 - 切换视图：
   - 基础地貌
   - 海拔
@@ -108,6 +110,8 @@ game/scenes/dev/MapGeneratorPreview.tscn
   - 左侧面板显示 tile key、平均高度和选中地格信息。
 
 预览视口交互由 `PreviewViewport.gui_input` 处理。预览场景整体是 UI Control 结构，不能依赖 `_unhandled_input`，否则鼠标事件可能先被 GUI 控件消费，导致右键拖动或左键选择不触发。
+
+预览工具刻意不在 `_ready()` 中调用地图生成器。原因是当前世界生成和小地图采样成本较高，自动生成会拖慢打开工具的速度。用户需要先调整 seed、尺寸、河流数量和大陆偏置，再点击“生成地图”显式触发生成。
 
 小地图预览复用 `LocalMapGenerator`，但不使用 `LocalMapService`，因此不会读取或写入 `user://local_maps` 缓存。这样可以让生成器预览始终反映当前 seed 和当前选中地块的即时生成结果。
 
@@ -408,7 +412,7 @@ river_strength = max(river.flow * falloff(t))
 
 ### 7. 大地图摘要
 
-`BigMapSummaryGenerator` 不为每个大地图地块保存完整 `256 x 256` 地格，而是只采样少量点生成摘要。
+`BigMapSummaryGenerator` 不为每个大地图地块保存完整 `sub_map_size x sub_map_size` 地格，而是只采样少量点生成摘要。
 
 默认每个大地图地块采样：
 

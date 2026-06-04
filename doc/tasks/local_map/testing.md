@@ -29,8 +29,8 @@
 验证方式：
 
 ```text
-east_tile.cell(255, y).height == west_neighbor.cell(0, y).height
-south_tile.cell(x, 255).height == north_neighbor.cell(x, 0).height
+east_tile.cell(sub_map_size - 1, y).height == west_neighbor.cell(0, y).height
+south_tile.cell(x, sub_map_size - 1).height == north_neighbor.cell(x, 0).height
 ```
 
 ## 河流连续性测试
@@ -56,7 +56,7 @@ south_tile.cell(x, 255).height == north_neighbor.cell(x, 0).height
 
 首版目标：
 
-- 单个 `256 x 256` 小地图生成不明显卡顿
+- 单个默认尺寸小地图生成不明显卡顿
 - 渲染只创建少量节点
 - 不为每个地格创建独立 Node
 

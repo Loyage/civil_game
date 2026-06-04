@@ -8,13 +8,14 @@
 - `CoreRoot` 负责大地图/小地图显示切换。
 - `LocalMapService` 提供 `load_or_generate(tile)`。
 - 首版使用 Godot 二进制 Variant 缓存，路径为 `user://local_maps/{seed}/v{version}/{tile_key}.bin`。
-- `LocalMapRoot` 使用 `ImageTexture` 渲染 `256 x 256` 高度图。
+- `LocalMapRoot` 使用 `ImageTexture` 渲染 `sub_map_size x sub_map_size` 高度图。
 - `LocalMapRoot` 根节点已改为 `CanvasLayer`，避免被大地图 `Camera2D` 平移/缩放后导致纹理不在屏幕内。
 - 小地图支持右键拖动视图，以及按住 Ctrl 后滚轮缩放。
 - 小地图支持左键选中地格、悬停预览和选中标记，左下角 UI 在小地图模式显示选中地格信息。
 - `MapGeneratorPreview` 可以复用 `LocalMapGenerator` 直接生成选中地块的小地图预览；该开发工具入口不走小地图缓存。
 - HUD 在小地图模式显示“返回大地图”按钮。
-- 小地图使用 `tile_col * 255 + cell_x` / `tile_row * 255 + cell_y` 全局采样坐标，保证相邻地块共享边界高度一致。
+- 小地图边长由 `sub_map_size` 控制，默认 `256`，预览工具可调整。
+- 小地图使用 `tile_col * (sub_map_size - 1) + cell_x` / `tile_row * (sub_map_size - 1) + cell_y` 全局采样坐标，保证相邻地块共享边界高度一致。
 - 小地图高度生成已接入 `WorldSkeletonGenerator + WorldFunctionSampler`，逐地格采样连续世界高度。
 - 小地图缓存版本已升级到 `v2`，避免读取旧算法缓存。
 
@@ -32,6 +33,7 @@
 - [x] 实现小地图种子推导
 - [x] 实现全局坐标高度采样
 - [x] 接入 `WorldFunctionSampler` 高度采样
+- [x] 实现 `sub_map_size` 可调小地图边长
 - [x] 实现 `-256..256` 高度生成
 - [x] 实现水体派生
 - [x] 实现河流入口/出口约束
@@ -52,7 +54,7 @@
 
 - [x] 创建 `LocalMapRoot.tscn`
 - [x] 实现 `local_map_root.gd`
-- [x] 实现 `256 x 256` 高度图渲染
+- [x] 实现可配置边长高度图渲染
 - [x] 实现水体/河流颜色显示
 - [x] 实现返回大地图按钮
 - [x] 实现右键拖动和 Ctrl 滚轮缩放

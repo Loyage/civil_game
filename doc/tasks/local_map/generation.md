@@ -2,7 +2,7 @@
 
 ## 目标
 
-小地图生成器需要在不提前生成所有地块内部结构的前提下，保证任意地块第一次进入时都能生成稳定、可复现、与邻居衔接合理的 `256 x 256` 小地图。
+小地图生成器需要在不提前生成所有地块内部结构的前提下，保证任意地块第一次进入时都能生成稳定、可复现、与邻居衔接合理的 `sub_map_size x sub_map_size` 小地图。
 
 ## 生成输入
 
@@ -33,18 +33,18 @@ local_seed = hash(world_seed, tile_col, tile_row)
 小地图内部坐标：
 
 ```text
-cell_x: 0..255
-cell_y: 0..255
+cell_x: 0..sub_map_size - 1
+cell_y: 0..sub_map_size - 1
 ```
 
 全局地格坐标实际实现为共享边界步长：
 
 ```text
-global_cell_x = tile_col * 255 + cell_x
-global_cell_y = tile_row * 255 + cell_y
+global_cell_x = tile_col * (sub_map_size - 1) + cell_x
+global_cell_y = tile_row * (sub_map_size - 1) + cell_y
 ```
 
-原因是 `256 x 256` 小地图的边界地格需要被相邻地块复用：A 地块 `cell(255, y)` 与右侧 B 地块 `cell(0, y)` 必须采样同一个全局坐标。使用 `255` 步长可以保证共享边界高度逐格相等。
+原因是小地图的边界地格需要被相邻地块复用：A 地块 `cell(sub_map_size - 1, y)` 与右侧 B 地块 `cell(0, y)` 必须采样同一个全局坐标。使用 `sub_map_size - 1` 步长可以保证共享边界高度逐格相等。
 
 实现上，共享边界只使用全局高度场。大地图地块海拔、山脉、水体等宏观约束通过 `edge_weight` 从边界向内部渐入，避免相邻地块因为各自宏观属性不同而破坏边界高度一致性。河流可以在边界设置 `river_flags`，但不会改写最外圈高度。
 
@@ -64,7 +64,7 @@ global_cell_y = tile_row * 255 + cell_y
 
 1. 使用 `WorldSkeletonGenerator` 按当前地图配置和 seed 重建世界骨架。
 2. 使用 `WorldFunctionSampler.sample_height(global_x, global_y)` 逐地格采样高度。
-3. 全局坐标仍采用 `tile_col * 255 + cell_x` / `tile_row * 255 + cell_y`，保证共享边界高度一致。
+3. 全局坐标采用 `tile_col * (sub_map_size - 1) + cell_x` / `tile_row * (sub_map_size - 1) + cell_y`，保证共享边界高度一致。
 4. 山脉通过 `WorldFunctionSampler` 的山脉影响自然抬高，不额外沿 `ridge_path_points` 强化。
 5. 河流约束仍根据入口/出口生成局部寻路河道，并压低河床高度。
 6. 水体按 `height < 0` 派生。
@@ -105,6 +105,7 @@ height < 0 => water
 - [x] 设计 `world_seed + tile_col/tile_row` hash 规则
 - [x] 设计全局地格坐标采样函数
 - [x] 接入 `WorldFunctionSampler` 逐地格采样高度
+- [x] 将小地图边长改为 `sub_map_size` 可调参数
 - [x] 设计小地图高度生成层级
 - [x] 明确山脉只通过全局高度采样自然体现
 - [x] 设计河流入口/出口映射规则

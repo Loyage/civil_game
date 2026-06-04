@@ -187,8 +187,9 @@ game/scripts/dev/map_generator_preview.gd
 
 - 输入 seed。
 - 输入 width / height。
-- 点击“生成”后显示完整世界地图。
-- 支持随机 seed。
+- 打开预览工具时不自动生成地图。
+- 点击“生成地图”后显示完整世界地图。
+- 支持随机 seed，但随机按钮只更新 seed 输入框，不立即生成地图。
 - 支持重新生成。
 - 显示当前 seed 和主要生成参数。
 - 支持基础视图切换：
@@ -358,8 +359,10 @@ MapGeneratorPreview
 - [x] 创建 `MapGeneratorPreview.tscn`
 - [x] 创建 `map_generator_preview.gd`
 - [x] 实现 seed / width / height 输入
-- [x] 实现预览场景点击生成
-- [x] 实现随机 seed 和重新生成
+- [x] 实现预览场景点击“生成地图”后生成
+- [x] 实现打开预览工具时不自动生成地图
+- [x] 实现随机 seed 只更新输入框
+- [x] 实现重新生成
 - [x] 实现基础地貌 / 海拔 / 湿度 / 温度 / 河流 / 特征视图切换
 - [x] 实现大地图预览山脉/河流走向叠加
 - [x] 实现预览工具“显示走向”开关
