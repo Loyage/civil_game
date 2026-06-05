@@ -20,7 +20,7 @@ const MAX_ZOOM := 16.0
 const ZOOM_STEP := 1.10
 const BASE_TILE_SIZE := 16.0
 const LOCAL_MAP_DISPLAY_SIZE := Vector2(640.0, 640.0)
-const DIRECTION_OVERLAY_PIXELS_PER_TILE := 4
+const DIRECTION_OVERLAY_PIXELS_PER_TILE := 12
 const DIRECTION_OVERLAY_FAR_ZOOM := 0.55
 const DIRECTION_RIVER_COLOR := Color("#34c6ff")
 const DIRECTION_RIVER_ARROW_COLOR := Color("#d7f6ff")
@@ -435,31 +435,51 @@ func _update_direction_overlay_transform() -> void:
 func _update_direction_overlay_visibility() -> void:
 	if direction_overlay_texture == null:
 		return
-	var force_visible := view_mode_button.get_selected_id() == VIEW_DIRECTIONS
+	var selected_view_id := view_mode_button.get_selected_id()
+	var force_visible := selected_view_id in [VIEW_RIVER, VIEW_DIRECTIONS]
 	var supports_overlay := current_stage_id in [PipelineResultScript.STAGE_RIVERS, PipelineResultScript.STAGE_FINAL]
 	direction_overlay_texture.visible = (
 		preview_mode == MODE_WORLD
 		and map_state != null
 		and supports_overlay
-		and zoom_level >= DIRECTION_OVERLAY_FAR_ZOOM
+		and (force_visible or zoom_level >= DIRECTION_OVERLAY_FAR_ZOOM)
 		and (direction_overlay_toggle.button_pressed or force_visible)
 	)
 
 func _draw_direction_paths_to_image(image: Image) -> void:
 	for tile in map_state.tiles_by_key.values():
-		if not tile.has_river or tile.river_path_points.size() < 2:
+		if not tile.has_river:
 			continue
-		var river_points := _tile_path_to_overlay_points(tile, tile.river_path_points)
+		var river_points := _tile_river_direction_points(tile)
 		_draw_overlay_polyline(image, river_points, DIRECTION_RIVER_COLOR)
 		_draw_overlay_arrow(image, river_points)
+
+func _tile_river_direction_points(tile) -> Array[Vector2i]:
+	if tile.river_flow != Vector2i.ZERO:
+		var center: Vector2 = Vector2(float(tile.offset.col) + 0.5, float(tile.offset.row) + 0.5)
+		var direction: Vector2 = Vector2(tile.river_flow).normalized()
+		return [
+			_overlay_point_from_world_tile(center - direction * 0.34),
+			_overlay_point_from_world_tile(center + direction * 0.34)
+		]
+	if tile.river_path_points.size() >= 2:
+		return _tile_path_to_overlay_points(tile, tile.river_path_points)
+	var fallback_center: Vector2 = Vector2(float(tile.offset.col) + 0.5, float(tile.offset.row) + 0.5)
+	return [
+		_overlay_point_from_world_tile(fallback_center + Vector2(-0.22, 0.0)),
+		_overlay_point_from_world_tile(fallback_center + Vector2(0.22, 0.0))
+	]
+
+func _overlay_point_from_world_tile(point: Vector2) -> Vector2i:
+	return Vector2i(
+		int(round(point.x * float(DIRECTION_OVERLAY_PIXELS_PER_TILE))),
+		int(round(point.y * float(DIRECTION_OVERLAY_PIXELS_PER_TILE)))
+	)
 
 func _tile_path_to_overlay_points(tile, normalized_points: PackedVector2Array) -> Array[Vector2i]:
 	var result: Array[Vector2i] = []
 	for point in normalized_points:
-		result.append(Vector2i(
-			int(round((float(tile.offset.col) + point.x) * float(DIRECTION_OVERLAY_PIXELS_PER_TILE))),
-			int(round((float(tile.offset.row) + point.y) * float(DIRECTION_OVERLAY_PIXELS_PER_TILE)))
-		))
+		result.append(_overlay_point_from_world_tile(Vector2(float(tile.offset.col) + point.x, float(tile.offset.row) + point.y)))
 	return result
 
 func _draw_overlay_polyline(image: Image, points: Array[Vector2i], color: Color) -> void:
@@ -513,6 +533,10 @@ func _set_overlay_pixel(image: Image, x: int, y: int, color: Color) -> void:
 	if x < 0 or y < 0 or x >= image.get_width() or y >= image.get_height():
 		return
 	image.set_pixel(x, y, color)
+	if x + 1 < image.get_width():
+		image.set_pixel(x + 1, y, color)
+	if y + 1 < image.get_height():
+		image.set_pixel(x, y + 1, color)
 
 func _clamp_pan_offset() -> void:
 	var scaled_size := base_map_size * zoom_level

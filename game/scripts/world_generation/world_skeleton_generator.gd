@@ -4,6 +4,7 @@ extends RefCounted
 const WorldSkeletonScript := preload("res://game/scripts/world_generation/world_skeleton.gd")
 const RIVER_START_WIDTH := 3.0
 const RIVER_MAX_WIDTH := 12.0
+const RIVER_SOURCE_MIN_DISTANCE_TILES := 4.0
 
 func generate(config):
 	var skeleton = WorldSkeletonScript.new()
@@ -58,20 +59,25 @@ func _generate_mountain_ridges(config, skeleton) -> void:
 func _generate_rivers(config, skeleton) -> void:
 	for id in range(config.river_source_count):
 		var source_tile: Vector2i = _pick_river_source_tile(config, skeleton, id)
+		if source_tile == Vector2i(-1, -1):
+			continue
 		var river: Dictionary = _trace_river(config, skeleton, id, source_tile)
 		if river["points"].size() < 2:
 			continue
 		river["id"] = skeleton.rivers.size()
+		skeleton.river_sources.append(source_tile)
 		skeleton.rivers.append(river)
 
 func _pick_river_source_tile(config, skeleton, river_id: int) -> Vector2i:
-	var best := Vector2i(config.big_map_size / 2, config.big_map_size / 2)
-	var best_score := -INF
+	var best := Vector2i(-1, -1)
+	var best_score: float = -INF
 	for candidate_index in range(48):
 		var tile := Vector2i(
 			clampi(int(floor(_hash01(config.seed, 211 + river_id, candidate_index, 0) * float(config.big_map_size))), 0, config.big_map_size - 1),
 			clampi(int(floor(_hash01(config.seed, 211 + river_id, candidate_index, 1) * float(config.big_map_size))), 0, config.big_map_size - 1)
 		)
+		if not _is_valid_river_source_spacing(skeleton, tile):
+			continue
 		var point: Vector2 = _tile_center(config, tile)
 		var height: int = _sample_layered_height(config.seed, skeleton, int(point.x), int(point.y))
 		var mountain: float = _sample_mountain_influence(skeleton, int(point.x), int(point.y))
@@ -85,9 +91,15 @@ func _pick_river_source_tile(config, skeleton, river_id: int) -> Vector2i:
 		var lake_index := int(floor(_hash01(config.seed, 214 + river_id, 0, 0) * float(skeleton.lakes.size())))
 		var lake: Dictionary = skeleton.lakes[clampi(lake_index, 0, skeleton.lakes.size() - 1)]
 		var lake_tile: Variant = lake.get("tile", best)
-		if typeof(lake_tile) == TYPE_VECTOR2I:
+		if typeof(lake_tile) == TYPE_VECTOR2I and _is_valid_river_source_spacing(skeleton, lake_tile as Vector2i):
 			best = lake_tile as Vector2i
 	return best
+
+func _is_valid_river_source_spacing(skeleton, tile: Vector2i) -> bool:
+	for source in skeleton.river_sources:
+		if Vector2(tile - source).length() < RIVER_SOURCE_MIN_DISTANCE_TILES:
+			return false
+	return true
 
 func _trace_river(config, skeleton, river_id: int, source_tile: Vector2i) -> Dictionary:
 	var tiles: Array[Vector2i] = [source_tile]

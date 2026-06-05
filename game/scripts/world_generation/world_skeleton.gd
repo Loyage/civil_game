@@ -9,6 +9,7 @@ var ocean_ratio: float
 var continent_bias: float
 var mountain_ridges: Array
 var rivers: Array
+var river_sources: Array[Vector2i]
 var lakes: Array
 var mountains_by_tile: Dictionary
 var rivers_by_tile: Dictionary
@@ -23,6 +24,7 @@ func _init() -> void:
 	continent_bias = 0.26
 	mountain_ridges = []
 	rivers = []
+	river_sources = []
 	lakes = []
 	mountains_by_tile = {}
 	rivers_by_tile = {}
