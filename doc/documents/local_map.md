@@ -1,6 +1,6 @@
 # Local Map Module Design
 
-`local_map` 模块负责在玩家进入世界地图单个地块时，按需生成并展示该地块内部的局部地图。小地图边长由地图生成配置 `sub_map_size` 控制，默认值为 `256`。当前版本实现基础可用流程，不提前生成所有地块的小地图。
+`local_map` 模块负责在玩家进入世界地图单个地块时，按需生成并展示该地块内部的局部地图。小地图边长由地图生成配置 `sub_map_size` 控制，默认值为 `64`。当前版本实现基础可用流程，不提前生成所有地块的小地图。
 
 ## 当前实现范围
 
@@ -11,7 +11,7 @@
 - 小地图高度范围为 `-256..256` 整数。
 - 小地图高度逐地格复用世界生成器的 `WorldSkeletonGenerator + WorldFunctionSampler`，不再使用旧版本地噪声高度场。
 - 水体规则为 `height < 0`。
-- 河流地块会根据入口/出口生成基础寻路河道，并压低河床。
+- 河流地块会根据大地图粗路径生成地格级细化河道，并按动态宽度/深度压低河床。
 - `LocalMapRoot` 用 `ImageTexture` 渲染高度图，避免为每个地格创建节点。
 - `LocalMapRoot` 使用 `CanvasLayer` 固定在屏幕坐标渲染，不受大地图相机平移和缩放影响。
 - 小地图视口支持右键拖动，以及按住 Ctrl 后滚轮缩放。
@@ -51,7 +51,9 @@ LocalMapGenerator.generate(tile)
       -> WorldSkeletonGenerator.generate(config)
       -> WorldFunctionSampler.sample_height(global_x, global_y)
   -> _apply_river()
-      -> _find_river_path()
+      -> _find_refined_river_path()
+      -> _find_river_path_segment()
+      -> _record_river_carve()
       -> _carve_river_at()
   -> _derive_flags_and_slopes()
 ```
@@ -85,27 +87,30 @@ WorldFunctionSampler.sample_height(global_x, global_y)
 
 ### 河流生成
 
-河流仍使用当前小地图局部寻路算法：
+河流使用“大地图粗路径 + 小地图细化路径”的两层结构：
 
-1. 根据大地图 `river_path_points` 和 `river_flow` 推导入口和出口。
-2. 使用 8 邻域 A* 风格寻路。
-3. 成本优先选择低处、缓坡和接近目标方向的地格。
-4. 对寻路得到的河道执行河床下切。
-5. 最外圈边界高度不被河床下切改写，以保留共享边界高度连续性。
+1. 根据大地图 `river_path_points`、`river_flow` 和湖泊标记推导入口、控制点和出口。
+2. 把大地图归一化粗路径点转换为小地图地格坐标。
+3. 对相邻控制点分段执行 8 邻域 A* 风格寻路。
+4. 寻路成本偏好低处、缓坡、下坡和接近目标方向。
+5. 对低矮上坡设置较低切割成本，让河流能切开局部洼地边缘或低矮阻挡。
+6. 对高海拔山体增加额外成本，避免河流无代价穿越山脊。
+7. 拼接所有分段路径，得到当前小地图内的完整河段。
+8. 沿路径记录 `river_carve_points`，并按宽度/深度执行河床下切。
+9. 最外圈边界只标记河流，不改写高度，以保留共享边界高度连续性。
 
-当前没有直接使用 `WorldFunctionSampler.sample_river_strength()` 标记整片河流范围。这样可以保证大地图指定的入口/出口连通，但水文真实性仍是原型级。
+河流宽度默认从 `3` 逐渐增长到最大 `12`，并受到大地图 `river_strength` 的轻微影响。切割深度从 `10` 增长到最大 `42`，同时参考当前宽度和下游距离。中心河床会被压低到海平面以下，外围按距离衰减，形成与河宽接近的低海拔通道。
 
-下一阶段河流设计会改为“大地图粗路径 + 小地图细化路径”：
+`LocalMapState.river_carve_points` 保存当前小地图内已生成河段的切割点，每个点包含：
 
-1. 大地图 `river_path_points` 只作为粗路径和入口/出口约束。
-2. 小地图第一次进入时，根据粗路径、全局地格坐标和相邻地块衔接信息生成本地河段。
-3. 小地图河流寻路步长可以跨多个地格，最终渲染和切割时插值到具体 `cell`。
-4. 寻路成本应包含高度下降、到海方向、切割成本和避免穿越高山脊。
-5. 河流切割不保存完整世界图层，而是保存每条河沿线切割点、宽度和深度参数。
-6. 切割宽度使用当前河流宽度，使河道附近形成与河宽接近的低海拔通道。
-7. 平时轻微切割，遇到局部最低点时允许更强切割；切不开时才形成湖泊。
+- `cell_x`
+- `cell_y`
+- `global_x`
+- `global_y`
+- `width`
+- `depth`
 
-该方案会改变小地图河流语义和缓存内容，实施时需要升级小地图缓存版本。
+当前没有直接使用 `WorldFunctionSampler.sample_river_strength()` 标记整片河流范围。这样可以保证大地图指定的入口/出口连通，并让小地图内部河段具备基本地形切割能力，但水文真实性仍是原型级。
 
 ### 水体和坡度
 
@@ -125,14 +130,14 @@ slope = max(abs(center_height - neighbor_height))
 
 ## 缓存版本
 
-本次大地图生成改为阶段化图层合成后，`WorldFunctionSampler` 的高度语义发生变化，缓存版本升级为：
+本次小地图河流改为地格级细化路径，并新增 `river_carve_points` 缓存字段，缓存版本升级为：
 
 ```text
-CACHE_VERSION = 3
-LocalMapState.version = 3
+CACHE_VERSION = 4
+LocalMapState.version = 4
 ```
 
-旧版缓存路径不会被读取，新生成的小地图会写入 `v3` 目录。
+旧版缓存路径不会被读取，新生成的小地图会写入 `v4` 目录。
 
 同一个缓存版本下，缓存读取还会校验 `width` 和 `height` 是否等于当前配置的 `sub_map_size`。如果玩家调整小地图边长，旧尺寸缓存不会被复用，会重新生成对应尺寸的小地图。
 
@@ -152,7 +157,7 @@ LocalMapState.version = 3
 
 - 小地图地格信息面板尚未实现。
 - 小地图当前仍直接使用最终世界骨架和 `WorldFunctionSampler` 采样，没有迁移到 `MapGenerationPipelineResult` 的阶段快照系统。后续应复用同一套“基础地形、山脉、海洋、河流、环境、最终地貌”的图层合成思路，避免大地图和小地图生成语义分叉。
-- 河流寻路是基础成本寻路，还没有完整水文约束。
+- 河流已经具备粗路径约束、地格级寻路和基础切割能力，但还没有完整流量守恒、侵蚀迭代和跨小地图缓存联动。
 - 山脉目前通过全局高度采样自然体现，尚未沿大地图 `ridge_path_points` 额外强化局部山脊。
 - 湖泊、湿地、植被和资源暂未在小地图数据结构中细化。
 - 缓存主体使用 `store_var()` 写入 Dictionary，后续如果需要更小体积，可以改成手写压缩二进制格式。

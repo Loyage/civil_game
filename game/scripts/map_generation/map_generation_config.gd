@@ -24,7 +24,7 @@ func _init() -> void:
 	width = 40
 	height = 40
 	big_map_size = 40
-	sub_map_size = 256
+	sub_map_size = 64
 	sea_level = 0
 	ocean_ratio = 0.30
 	mountain_count = 6

@@ -81,7 +81,7 @@ unique_name_in_owner = true
 layout_mode = 2
 min_value = 32.0
 max_value = 512.0
-value = 256.0
+value = 64.0
 rounded = true
 
 [node name="OceanRatioLabel" type="Label" parent="Root/Controls/Margin/Column"]
