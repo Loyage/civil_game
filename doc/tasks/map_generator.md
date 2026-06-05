@@ -58,7 +58,7 @@ game/scripts/dev/map_generator_preview.gd
 - `map_generation_config.gd`：强类型配置对象，承载 width、height、seed、thresholds、generation 参数和 start_city。
 - `map_generator.gd`：主生成器入口，提供 `generate(config) -> MapState`，委托 `world_generation` 分层执行实际生成。
 - `map_generation_debug_writer.gd`：把生成结果写入 `user://generated_map.json` 等调试输出。
-- `map_generation_values.gd`：旧版抽离阶段的中间结构，当前新生成路径不再作为主数据来源。
+- `map_generation_values.gd`：中间数据结构，承载环境场与派生字段，避免生成流程继续依赖裸 `Dictionary`。
 - `world_generation/*.gd`：新世界生成分层，使用全局坐标连续采样，服务大地图摘要和后续小地图懒加载。
 - `MapGeneratorPreview.tscn`：开发期地图生成预览场景，用于输入 seed 和参数后直观看到生成结果。
 - `map_generator_preview.gd`：预览场景脚本，只调用正式 `MapGenerator.generate(config)`，不实现独立生成逻辑。
@@ -76,9 +76,9 @@ game/scripts/dev/map_generator_preview.gd
 ```text
 MapRoot
   -> MapLoader
-       -> MapGenerationConfig.from_dictionary(raw_config)
+       -> MapGenerationConfig.load_from_dictionary(raw_config)
        -> MapGenerator.generate(config)
-       -> MapGenerationDebugWriter.write(config, map_state)
+       -> MapGenerationDebugWriter.write_generated_map(config, map_state)
 ```
 
 `MapRoot` 仍通过 `MapLoader.load_generated_map()` 获取 `MapState`，这样抽离不会影响渲染层和 UI 调用入口。
@@ -257,10 +257,10 @@ MapGeneratorPreview
 - 将 `_write_generated_map()` 和序列化辅助函数迁移到 debug writer。
 - `MapLoader` 只负责决定是否写调试输出和调用 writer。
 
-### M4 - 中间数据清理
+### M4 - 中间数据结构
 
 - 新建 `MapGenerationValues`。
-- 用 `MapGenerationValues` 替代临时 Dictionary value。
+- 用 `MapGenerationValues` 替代旧版临时 Dictionary value。
 - 明确环境场、河流字段和派生字段的生命周期。
 - 为后续测试和算法扩展提供稳定结构。
 
@@ -347,7 +347,7 @@ MapGeneratorPreview
 - [x] 定义 `MapGenerationConfig`
 - [x] 定义 `MapGenerator.generate(config)` 接口
 - [x] 定义 `MapGenerationDebugWriter`
-- [ ] 设计 `MapGenerationValues` 是否需要落地
+- [x] 设计并接入 `MapGenerationValues`
 - [x] 从 `MapLoader` 抽离环境场生成
 - [x] 从 `MapLoader` 抽离河流生成
 - [x] 从 `MapLoader` 抽离地貌派生
@@ -397,7 +397,6 @@ MapGeneratorPreview
 - [x] 更新正式地图渲染读取 `biome`
 - [x] 更新 UI 地块信息面板显示平均/最低/最高高度、温度、湿度、biome
 - [x] 更新生成器预览场景读取新字段
-- [x] 将 `doc/tasks/world_map_generation_guidance.md` 纳入任务文档管理
 - [ ] 将真实小地图生成接入 `SubMapGenerator`
 - [ ] 实现玩家改动增量保存与原始地形分离
 - [ ] 为相同 seed 的大地图摘要增加自动回归测试

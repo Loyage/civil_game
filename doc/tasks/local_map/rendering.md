@@ -35,7 +35,7 @@ game/scripts/local_map/local_map_root.gd
 - 河流地格显示为更亮或更饱和的蓝色
 - 山脉或高坡区域用灰白色表达
 
-后续如果需要近距离查看，再增加缩放、拖拽或每地格多像素渲染。
+当前已支持缩放和拖拽；如果后续需要更高保真，再考虑每地格多像素渲染。
 
 ## 渲染数据输入
 
@@ -44,9 +44,9 @@ game/scripts/local_map/local_map_root.gd
 - `LocalMapState.river_flags`
 - `LocalMapState.slope_values`
 
-## 交互规划
+## 交互
 
-首版需要规划：
+当前交互：
 
 - 从大地图双击地块进入小地图
 - 小地图界面提供返回大地图按钮

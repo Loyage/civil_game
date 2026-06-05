@@ -6,6 +6,7 @@
 
 - `core.md`
 - `map.md`
+- `local_map/`
 - `map_generator.md`
 - `city.md`
 - `tech.md`
@@ -16,6 +17,5 @@
 
 说明：
 
-- 所有 checklist 初始均为未完成
 - `progress.md` 只用于跟踪后续实现状态
 - 环境搭建不在本目录范围内

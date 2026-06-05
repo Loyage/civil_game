@@ -13,7 +13,7 @@ CoreRoot
   └── LocalMapRoot
 ```
 
-规划职责：
+当前职责：
 
 - `MapRoot`：显示大地图，发出地块选择和进入请求
 - `UIRoot`：显示 HUD、地块信息、进入/返回按钮
@@ -64,7 +64,7 @@ CoreRoot
 - `river_path_points`
 - `ridge_path_points`
 
-其中大地图 `elevation` 后续需要从 `0..1` 改为 `-256..256` 整数范围。
+其中大地图 `elevation` 已按 `-256..256` 高度语义工作。
 
 ## 与 UI 关系
 
@@ -92,4 +92,4 @@ UI 后续仍可新增：
 - [x] 设计 `LocalMapRoot` 接收 `LocalMapState` 的接口
 - [x] 设计返回大地图按钮和信号
 - [x] 设计保留大地图相机状态
-- [x] 设计小地图地格信息 UI 后续入口
+- [x] 设计小地图地格信息 UI

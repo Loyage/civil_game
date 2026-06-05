@@ -88,7 +88,7 @@ user://local_maps/{seed}/v{version}/{tile_key}.bin
 首版已采用 Godot `FileAccess` 二进制写入：
 
 - 文件头写入 `CLM1` magic。
-- 后续写入 `CACHE_VERSION`。
+- 文件头后写入 `CACHE_VERSION`。
 - 主体使用 `store_var()` 写入 Dictionary，包含 `PackedInt32Array` 与 `PackedByteArray`。
 
 这样保留二进制缓存方向，同时避免手写有符号整数数组读写导致负高度歧义。
