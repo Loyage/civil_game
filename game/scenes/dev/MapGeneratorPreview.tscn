@@ -81,7 +81,7 @@ unique_name_in_owner = true
 layout_mode = 2
 min_value = 32.0
 max_value = 512.0
-value = 256.0
+value = 64.0
 rounded = true
 
 [node name="OceanRatioLabel" type="Label" parent="Root/Controls/Margin/Column"]
@@ -108,11 +108,11 @@ max_value = 64.0
 value = 6.0
 rounded = true
 
-[node name="RiverCountLabel" type="Label" parent="Root/Controls/Margin/Column"]
+[node name="RiverSourceCountLabel" type="Label" parent="Root/Controls/Margin/Column"]
 layout_mode = 2
-text = "River Count"
+text = "River Source Count"
 
-[node name="RiverCountInput" type="SpinBox" parent="Root/Controls/Margin/Column"]
+[node name="RiverSourceCountInput" type="SpinBox" parent="Root/Controls/Margin/Column"]
 unique_name_in_owner = true
 layout_mode = 2
 min_value = 0.0

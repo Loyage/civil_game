@@ -1,7 +1,7 @@
 class_name LocalMapState
 extends RefCounted
 
-const DEFAULT_SIZE := 256
+const DEFAULT_SIZE := 64
 
 var version: int
 var world_seed: int
@@ -14,10 +14,11 @@ var heights: PackedInt32Array
 var water_flags: PackedByteArray
 var river_flags: PackedByteArray
 var slope_values: PackedInt32Array
+var river_carve_points: Array
 var average_height: int
 
 func _init() -> void:
-	version = 3
+	version = 4
 	world_seed = 0
 	tile_key = ""
 	tile_col = 0
@@ -28,6 +29,7 @@ func _init() -> void:
 	water_flags = PackedByteArray()
 	river_flags = PackedByteArray()
 	slope_values = PackedInt32Array()
+	river_carve_points = []
 	average_height = 0
 
 func resize_arrays() -> void:

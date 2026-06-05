@@ -6,7 +6,7 @@
 
 - `MapGenerationConfig` 承载地图生成配置。
 - `MapGenerator.generate(config)` 根据配置生成 `MapState`，内部委托 `world_generation` 模块完成骨架生成和大地图摘要。
-- `WorldSkeletonGenerator` 生成全局山脉折线和主河流折线。
+- `WorldSkeletonGenerator` 生成全局山脉折线和河流下坡路径。
 - `WorldFunctionSampler` 基于全局坐标 `worldX/worldY` 采样高度、温度、湿度、河流强度和 biome。
 - `BigMapSummaryGenerator` 对每个大地图地块按 `summary_sample_resolution` 采样内部地格，生成平均高度、最低/最高高度和主体 biome。
 - `SubMapGenerator` 先保留接口，不接入现有 `LocalMapGenerator`。
@@ -70,12 +70,12 @@ game/scenes/dev/MapGeneratorPreview.tscn
 - 调整 `sub_map_size`，用于控制进入单个大地图地块后的局部地图边长。
 - 调整 `ocean_ratio`，用于控制海洋生成目标比例。
 - 调整 `mountain_count`。
-- 调整 `major_river_count`。
+- 调整 `river_source_count`。
 - 调整 `continent_bias`。
 - 打开场景时不自动生成地图，右侧预览区保持空白并提示调整参数后生成。
 - 点击“生成地图”后才生成完整世界地图。
 - 点击“随机 Seed”只更新 seed 输入框，不立即生成地图。
-- 通过 `Stage` 下拉框切换基础地形、海洋、山脉、河流、环境和最终地貌阶段。
+- 通过 `Stage` 下拉框切换基础地形、山脉、海洋、河流、环境和最终地貌阶段。
 - 切换视图：
   - 基础地貌
   - 海拔
@@ -101,6 +101,8 @@ game/scenes/dev/MapGeneratorPreview.tscn
   - “显示走向”开关可以关闭普通视图中的走向叠加。
   - “走向”视图会强制显示走向叠加，用较暗底图突出线条。
   - 河流使用蓝色线条和箭头表示路径与流向。
+  - “河流”和“走向”视图会强制显示河流走向 overlay，避免只看到有河流的色块。
+  - 单个河流地块优先使用 `river_flow` 绘制格内方向箭头；只有没有 `river_flow` 时才回退到 `river_path_points`。
   - 山脉使用灰棕色连续脊线表示整体走向。
   - 远景缩放低于阈值时隐藏走向细节。
   - 该功能只作用于大地图预览，小地图预览暂不显示走向 overlay。
@@ -132,7 +134,7 @@ game/scenes/dev/MapGeneratorPreview.tscn
 
 ## 当前世界生成模型
 
-当前大地图尺寸使用正方形 `big_map_size x big_map_size`。小地图尺寸使用 `sub_map_size`，默认 `256`。所有采样必须先转换为全局坐标：
+当前大地图尺寸使用正方形 `big_map_size x big_map_size`。小地图尺寸使用 `sub_map_size`，默认 `64`。所有采样必须先转换为全局坐标：
 
 ```text
 worldX = tileX * subMapSize + localX
@@ -160,9 +162,9 @@ MapGenerator.generate(config)
 
 MapGenerator.generate_pipeline(config)
   -> WorldSkeletonGenerator.generate(config)
-      -> resolve sea_level from ocean_ratio
       -> _generate_mountain_ridges()
-      -> _generate_major_rivers()
+      -> resolve sea_level from ocean_ratio after mountains
+      -> _generate_rivers()
       -> _build_skeleton_tile_index()
   -> BigMapSummaryGenerator.generate(config, skeleton, stage_id)
       -> _generate_tile_summary()
@@ -189,11 +191,11 @@ MapGenerator.generate_pipeline(config)
 | --- | --- | --- |
 | `seed` | `260603` | 所有确定性随机的根输入。 |
 | `big_map_size` | `40` | 大地图边长，当前强制为方形。 |
-| `sub_map_size` | `256` | 每个大地图地块内部对应的小地图边长。 |
-| `sea_level` | `0` | 兼容字段；当前实际海平面由 `ocean_ratio` 从基础高度中求得。 |
+| `sub_map_size` | `64` | 每个大地图地块内部对应的小地图边长。 |
+| `sea_level` | `0` | 兼容字段；当前实际海平面由 `ocean_ratio` 从基础高度 + 山脉抬升后的高度中求得。 |
 | `ocean_ratio` | `0.30` | 海洋生成目标比例，预览工具可调整。 |
 | `mountain_count` | `6` | 生成多少条全局山脉脊线。 |
-| `major_river_count` | `8` | 生成多少条主河流折线。 |
+| `river_source_count` | `8` | 生成多少个河流源头候选。实际河流可能因汇流或湖泊停止而少于该值。 |
 | `summary_sample_resolution` | `4` | 每个大地图地块内部摘要采样为 `4 x 4` 点。 |
 | `continent_bias` | `0.26` | 控制大陆中心抬升和边缘衰减幅度。 |
 
@@ -218,7 +220,9 @@ height = big_map_size
 | `sea_level` | 海平面。 |
 | `continent_bias` | 大陆偏置。 |
 | `mountain_ridges` | 山脉折线数组。 |
-| `rivers` | 主河流折线数组。 |
+| `rivers` | 河流下坡路径数组。 |
+| `river_sources` | 已成功生成的河流源头地块数组，用于源头排他性。 |
+| `lakes` | 河流遇到局部洼地后形成的湖泊数组。 |
 | `mountains_by_tile` | 大地图地块到相关山脉 id 的索引。 |
 | `rivers_by_tile` | 大地图地块到相关河流 id 的索引。 |
 
@@ -229,8 +233,8 @@ height = big_map_size
 | 阶段 | 含义 | 预览显示 |
 | --- | --- | --- |
 | `base` | 根据 seed 和大陆偏置生成基础海拔。 | 基础高度灰度/渐变。 |
-| `ocean` | 根据 `ocean_ratio` 求海平面并浸没低地。 | 海洋 mask。 |
 | `mountains` | 生成山脉影响层。 | 山脉影响强度灰度图。 |
+| `ocean` | 根据山脉后高度和 `ocean_ratio` 求海平面并浸没低地。 | 海洋 mask。 |
 | `rivers` | 生成主河流路径。 | 黑底河流路径。 |
 | `environment` | 采样温度和湿度。 | 当前以湿度梯度显示。 |
 | `final` | 合成最终高度、地貌、河流和渲染辅助数据。 | 完整大地图。 |
@@ -263,7 +267,7 @@ height = big_map_size
 
 ### 5. 生成河流骨架
 
-`_generate_major_rivers(config, skeleton)` 会按 `major_river_count` 创建主河流折线。
+`_generate_rivers(config, skeleton)` 会按 `river_source_count` 创建河流源头候选。
 
 当前河流层只生成路径、流向、强度和大地图地块标记，不再对海拔执行河床下切，也不再为湿度采样叠加河流加成。
 
@@ -272,20 +276,43 @@ height = big_map_size
 | 字段 | 生成方法 |
 | --- | --- |
 | `id` | 河流序号。 |
-| `points` | 7 个全局坐标点组成的折线。 |
-| `width` | `18..42` 之间的影响宽度。 |
-| `flow` | `0.65..1.0` 之间的流量强度。 |
+| `points` | 按大地图 8 邻域下坡追踪得到的全局坐标点。 |
+| `width_profile` | 每个路径点的河流宽度，单位为全局地格。 |
+| `width` | 最大影响宽度，当前默认最大 `12`。 |
+| `flow` | 流量强度，当前为 `1.0`。 |
+| `merge_target` | 如果汇入已有河流，则记录被汇入河流 id。 |
+| `reached_ocean` | 当前路径末端是否到达海洋。 |
 
 河流折线生成方法：
 
 1. 在全世界范围内抽取多个候选点。
-2. 使用基础地形、海洋塑形和山脉影响后的高度，选择高海拔陆地作为源头。
-3. 在基础海拔低于当前海平面的候选点中选择海洋出口。
-4. 从源头到海洋出口插值生成 7 个点。
-5. 沿路径法线加入少量漂移，形成弯曲河流。
-6. 坐标被限制在世界边界内。
+2. 使用基础地形、山脉影响和山脉邻近程度，选择山脉影响范围内的高海拔陆地作为源头。
+3. 源头之间存在排他性：新源头必须与已有源头保持至少 `4` 个大地图地块的直线距离。
+4. 如果本轮候选都不满足源头排他性，则放弃生成这条河流，不放宽距离。
+5. 湖泊溢出源头也受同样的源头距离限制。
+6. 从源头开始执行大地图 8 邻域成本寻路，目标是找到最低成本的入海路径。
+7. 寻路成本包含移动距离、上坡切割成本、高地成本、山脉惩罚、下坡奖励和入海奖励。
+8. 河流允许切开短距离局部高地，但单步上坡超过 `72` 高度且不是海洋时视为不可通行。
+9. 到达海洋地块后停止。
+10. 如果路径经过已有河流宽度范围，则当前河流在汇入点停止，并通过宽度增长表示汇流。
+11. 如果找不到可行入海路径，则在源头或路径末端记录湖泊。
 
-当前河流是“全局走向折线”，还不是严格由高度场逐格下坡追踪出来的真实水文网络。它只生成路径、流向和强度数据，不直接改变高度或湿度。
+河流宽度单位为全局地格。默认从 `3` 开始，随路径距离增长；如果发生汇流，会额外增宽，最大宽度为 `12`。
+
+当前河流在大地图层仍是粗路径，用于地图摘要、预览和快速索引。进入小地图后，`LocalMapGenerator` 会把该粗路径转换为地格级控制点，并在当前小地图内部生成完整河段。这样大地图不提前保存完整世界级河流图层，小地图也不会只沿地块中心线画一条直线。
+
+大地图摘要会按地块附近的局部河段计算 `river_flow`，而不是使用整条河流的起点到终点方向。这样预览工具中的箭头能体现河流在每个地块内的局部走向，避免多个相邻地块显示完全相同的箭头。
+
+当前大地图/小地图分工：
+
+1. 大地图保存粗路径，继续用于地图摘要、预览和快速索引。
+2. 小地图第一次进入时，根据粗路径的入口、出口和全局地格坐标进行局部细化。
+3. 小地图细化路径使用 8 邻域寻路算法逐地格生成。
+4. 寻路成本包含高度下降、到海方向、切割成本和避免穿越高山脊。
+5. 河流切割保存为小地图内沿线切割点、宽度和深度，而不是提前保存整张世界级 `river_carving` 图。
+6. 小地图缓存保存 `river_carve_points`，用于后续调试、存档和更细的河流渲染。
+
+河流切割目前在小地图生成时生效：平时允许轻微切割，遇到局部洼地或低矮阻挡时允许通过较低的切割成本继续前进；高海拔山体仍会产生额外成本。切割宽度使用当前河流宽度，最终会在小地图地格高度中形成一条与河流宽度接近的低海拔通道。
 
 ### 5. 建立骨架索引
 
@@ -327,7 +354,7 @@ world_y = tile_row * sub_map_size + local_y
 当前最终高度公式：
 
 ```text
-height = ocean_reshaped_base + mountain
+height = ocean_reshape(base + mountain)
 ```
 
 各部分含义：
@@ -336,8 +363,8 @@ height = ocean_reshaped_base + mountain
 | --- | --- |
 | `continent` | 中心大陆抬升，边缘衰减。 |
 | `detail` | 三层坐标 hash 噪声叠加。 |
-| `ocean_reshaped_base` | 根据 `ocean_ratio` 求得的海平面重塑低地深度。 |
 | `mountain` | 山脉折线附近增加高度，最高约 `150`。 |
+| `ocean_reshape` | 根据 `ocean_ratio` 在山脉后高度上求海平面，并重塑低地深度。 |
 
 大陆基础高度：
 
@@ -570,8 +597,8 @@ hash01(skeleton.seed, salt, world_x / scale, world_y / scale)
 
 当前仍需注意：
 
-- 山脉和河流骨架本身由固定顺序生成，改变 `mountain_count` 或 `major_river_count` 会改变结构数量。
-- 当前主河流不是严格按高度场下坡追踪，因此只保证“有整体走向”，还不保证完整真实水文。
+- 山脉和河流骨架本身由固定顺序生成，改变 `mountain_count` 或 `river_source_count` 会改变结构数量。
+- 当前河流按大地图地块级别下坡追踪，尚未细化到小地图地格级真实水文。
 - `summary_sample_resolution` 越高，大地图摘要越接近真实局部地形，但生成耗时越高。
 
 ## 当前限制

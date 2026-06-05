@@ -9,20 +9,26 @@ var ocean_ratio: float
 var continent_bias: float
 var mountain_ridges: Array
 var rivers: Array
+var river_sources: Array[Vector2i]
+var lakes: Array
 var mountains_by_tile: Dictionary
 var rivers_by_tile: Dictionary
+var lakes_by_tile: Dictionary
 
 func _init() -> void:
 	seed = 0
 	big_map_size = 40
-	sub_map_size = 256
+	sub_map_size = 64
 	sea_level = 0
 	ocean_ratio = 0.30
 	continent_bias = 0.26
 	mountain_ridges = []
 	rivers = []
+	river_sources = []
+	lakes = []
 	mountains_by_tile = {}
 	rivers_by_tile = {}
+	lakes_by_tile = {}
 
 func tile_key(tile_x: int, tile_y: int) -> String:
 	return "%d:%d" % [tile_x, tile_y]
@@ -40,3 +46,10 @@ func add_river_to_tile(tile_x: int, tile_y: int, river_id: int) -> void:
 		rivers_by_tile[key] = []
 	if not rivers_by_tile[key].has(river_id):
 		rivers_by_tile[key].append(river_id)
+
+func add_lake_to_tile(tile_x: int, tile_y: int, lake_id: int) -> void:
+	var key := tile_key(tile_x, tile_y)
+	if not lakes_by_tile.has(key):
+		lakes_by_tile[key] = []
+	if not lakes_by_tile[key].has(lake_id):
+		lakes_by_tile[key].append(lake_id)

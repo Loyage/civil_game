@@ -65,7 +65,7 @@
 当前生成流程如下：
 
 1. 读取配置中的 `big_map_size`、`sub_map_size`、种子和生成参数。
-2. `WorldSkeletonGenerator` 使用 seed 生成全局山脉折线和主河流折线。
+2. `WorldSkeletonGenerator` 使用 seed 生成全局山脉折线、河流下坡路径和湖泊。
 3. `WorldFunctionSampler` 基于全局坐标采样高度、温度、湿度、河流强度和 biome。
 4. `BigMapSummaryGenerator` 对每个大地图地块内部进行 `summary_sample_resolution x summary_sample_resolution` 采样。
 5. 根据采样结果写入平均高度、最低/最高高度、主体 biome、温度、湿度和河流强度。

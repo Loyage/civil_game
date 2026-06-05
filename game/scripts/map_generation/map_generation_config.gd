@@ -9,7 +9,7 @@ var sub_map_size: int
 var sea_level: int
 var ocean_ratio: float
 var mountain_count: int
-var major_river_count: int
+var river_source_count: int
 var summary_sample_resolution: int
 var seed: int
 var generated_output_path: String
@@ -24,11 +24,11 @@ func _init() -> void:
 	width = 40
 	height = 40
 	big_map_size = 40
-	sub_map_size = 256
+	sub_map_size = 64
 	sea_level = 0
 	ocean_ratio = 0.30
 	mountain_count = 6
-	major_river_count = 8
+	river_source_count = 8
 	summary_sample_resolution = 4
 	seed = 260603
 	generated_output_path = "user://generated_map.json"
@@ -58,7 +58,7 @@ func load_from_dictionary(data: Dictionary) -> void:
 	sea_level = int(data.get("sea_level", data.get("seaLevel", sea_level)))
 	ocean_ratio = float(data.get("ocean_ratio", data.get("oceanRatio", ocean_ratio)))
 	mountain_count = int(data.get("mountain_count", data.get("mountainCount", mountain_count)))
-	major_river_count = int(data.get("major_river_count", data.get("majorRiverCount", major_river_count)))
+	river_source_count = int(data.get("river_source_count", data.get("riverSourceCount", river_source_count)))
 	summary_sample_resolution = int(data.get("summary_sample_resolution", data.get("summarySampleResolution", summary_sample_resolution)))
 	seed = int(data.get("seed", seed))
 	generated_output_path = String(data.get("generated_output_path", generated_output_path))
@@ -81,7 +81,7 @@ func to_dictionary() -> Dictionary:
 		"sea_level": sea_level,
 		"ocean_ratio": ocean_ratio,
 		"mountain_count": mountain_count,
-		"major_river_count": major_river_count,
+		"river_source_count": river_source_count,
 		"summary_sample_resolution": summary_sample_resolution,
 		"seed": seed,
 		"generated_output_path": generated_output_path,

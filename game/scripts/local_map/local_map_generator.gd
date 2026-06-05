@@ -10,6 +10,10 @@ const WorldFunctionSamplerScript := preload("res://game/scripts/world_generation
 const SEA_LEVEL := 0
 const MIN_HEIGHT := -256
 const MAX_HEIGHT := 256
+const RIVER_START_WIDTH := 3.0
+const RIVER_MAX_WIDTH := 12.0
+const RIVER_MIN_DEPTH := 10.0
+const RIVER_MAX_DEPTH := 42.0
 
 var world_seed: int
 var config
@@ -95,13 +99,44 @@ func _apply_river(state, tile) -> void:
 	if not tile.has_river:
 		return
 
-	var path = _find_river_path(state, tile)
-	for point in path:
-		_carve_river_at(state, point.x, point.y)
+	var path = _find_refined_river_path(state, tile)
+	if path.is_empty():
+		return
 
-func _find_river_path(state, tile) -> Array[Vector2i]:
-	var start = _river_start_cell(tile)
-	var goal = _river_goal_cell(tile)
+	for index in range(path.size()):
+		var point: Vector2i = path[index]
+		var width: float = _river_width_at(tile, index, path.size())
+		var depth: float = _river_depth_at(width, index, path.size())
+		_record_river_carve(state, point, width, depth)
+		_carve_river_at(state, point.x, point.y, width, depth)
+
+func _find_refined_river_path(state, tile) -> Array[Vector2i]:
+	var controls := _river_control_cells(tile)
+	if controls.size() < 2:
+		return controls
+
+	var result: Array[Vector2i] = []
+	for index in range(controls.size() - 1):
+		var segment := _find_river_path_segment(state, controls[index], controls[index + 1])
+		for segment_index in range(segment.size()):
+			if not result.is_empty() and segment_index == 0 and result[result.size() - 1] == segment[segment_index]:
+				continue
+			result.append(segment[segment_index])
+	return result
+
+func _river_control_cells(tile) -> Array[Vector2i]:
+	var result: Array[Vector2i] = []
+	_append_unique_cell(result, _river_start_cell(tile))
+	for point in tile.river_path_points:
+		_append_unique_cell(result, _normalized_to_cell(point))
+	_append_unique_cell(result, _river_goal_cell(tile))
+	return result
+
+func _append_unique_cell(cells: Array[Vector2i], cell: Vector2i) -> void:
+	if cells.is_empty() or cells[cells.size() - 1] != cell:
+		cells.append(cell)
+
+func _find_river_path_segment(state, start: Vector2i, goal: Vector2i) -> Array[Vector2i]:
 	if start == goal:
 		return [start]
 
@@ -197,9 +232,14 @@ func _river_step_cost(state, current: Vector2i, next: Vector2i, goal: Vector2i) 
 	var current_height = state.heights[state.index(current.x, current.y)]
 	var next_height = state.heights[state.index(next.x, next.y)]
 	var uphill = max(0, next_height - current_height)
+	var downhill = max(0, current_height - next_height)
 	var diagonal = 1.4 if current.x != next.x and current.y != next.y else 1.0
 	var goal_bias = Vector2(next - goal).length() * 0.03
-	return diagonal + float(uphill) * 0.08 + max(0.0, float(next_height - SEA_LEVEL)) * 0.01 + goal_bias
+	var cut_cost: float = float(uphill) * 0.018
+	var highland_cost: float = maxf(0.0, float(next_height - SEA_LEVEL)) * 0.004
+	var mountain_cost: float = maxf(0.0, float(next_height - 150)) * 0.05
+	var downhill_bonus: float = minf(0.45, float(downhill) * 0.004)
+	return maxf(0.1, diagonal + cut_cost + highland_cost + mountain_cost + goal_bias - downhill_bonus)
 
 func _reconstruct_path(came_from: Dictionary, start: Vector2i, goal: Vector2i) -> Array[Vector2i]:
 	var goal_key = _cell_key(goal)
@@ -223,21 +263,46 @@ func _straight_path(start: Vector2i, goal: Vector2i) -> Array[Vector2i]:
 		path.append(Vector2i(int(round(lerpf(start.x, goal.x, t))), int(round(lerpf(start.y, goal.y, t)))))
 	return path
 
-func _carve_river_at(state, center_x: int, center_y: int) -> void:
-	for dy in range(-2, 3):
-		for dx in range(-2, 3):
+func _river_width_at(tile, index: int, path_size: int) -> float:
+	var distance_growth: float = float(index) / maxf(1.0, float(path_size - 1))
+	var strength_growth: float = clampf(float(tile.river_strength) * 1.5, 0.0, 0.35)
+	return lerpf(RIVER_START_WIDTH, RIVER_MAX_WIDTH, clampf(distance_growth * 0.75 + strength_growth, 0.0, 1.0))
+
+func _river_depth_at(width: float, index: int, path_size: int) -> float:
+	var distance_growth: float = float(index) / maxf(1.0, float(path_size - 1))
+	var width_growth: float = clampf((width - RIVER_START_WIDTH) / maxf(1.0, RIVER_MAX_WIDTH - RIVER_START_WIDTH), 0.0, 1.0)
+	return lerpf(RIVER_MIN_DEPTH, RIVER_MAX_DEPTH, clampf(distance_growth * 0.45 + width_growth * 0.55, 0.0, 1.0))
+
+func _record_river_carve(state, cell: Vector2i, width: float, depth: float) -> void:
+	state.river_carve_points.append({
+		"cell_x": cell.x,
+		"cell_y": cell.y,
+		"global_x": state.global_cell_x(cell.x),
+		"global_y": state.global_cell_y(cell.y),
+		"width": width,
+		"depth": depth
+	})
+
+func _carve_river_at(state, center_x: int, center_y: int, width: float, depth: float) -> void:
+	var radius: float = maxf(1.0, width * 0.5)
+	var limit: int = int(ceil(radius)) + 1
+	for dy in range(-limit, limit + 1):
+		for dx in range(-limit, limit + 1):
 			var x = center_x + dx
 			var y = center_y + dy
 			if not state.is_valid_cell(x, y):
 				continue
-			var distance = Vector2(dx, dy).length()
-			if distance > 2.2:
+			var distance: float = Vector2(dx, dy).length()
+			if distance > radius:
 				continue
 			var index = state.index(x, y)
 			state.river_flags[index] = 1
 			if x == 0 or y == 0 or x == state.width - 1 or y == state.height - 1:
 				continue
-			var target = -8 if distance <= 1.1 else -2
+			var falloff: float = 1.0 - clampf(distance / radius, 0.0, 1.0)
+			var cut_amount: int = int(round(depth * falloff))
+			var water_target: int = SEA_LEVEL - maxi(2, int(round(depth * 0.35 * falloff)))
+			var target: int = mini(state.heights[index] - cut_amount, water_target)
 			state.heights[index] = min(state.heights[index], target)
 
 func _derive_flags_and_slopes(state) -> void:

@@ -24,15 +24,17 @@ var heights: PackedInt32Array
 var water_flags: PackedByteArray
 var river_flags: PackedByteArray
 var slope_values: PackedInt32Array
+var river_carve_points: Array
 var average_height: int
 ```
 
 说明：
 
 - `width` 和 `height` 来自地图生成配置 `sub_map_size`
-- `heights` 长度为 `65536`
+- `heights` 长度为 `width * height`
 - 一维索引：`index = y * width + x`
 - `water_flags`、`river_flags` 使用紧凑数组表达派生状态
+- `river_carve_points` 保存已生成河段的切割点、宽度和深度，不保存完整世界级河流切割图层
 
 ### `LocalCellState`
 
@@ -81,6 +83,7 @@ user://local_maps/{seed}/v{version}/{tile_key}.bin
 - 水体派生结果
 - 河流派生结果
 - 坡度派生结果
+- 河流切割点、宽度和深度
 - 平均高度
 
 ## 存储格式

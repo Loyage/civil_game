@@ -61,6 +61,8 @@ func _generate_tile_summary(config, skeleton, sampler, col: int, row: int, stage
 		_apply_mountain_summary(skeleton, tile)
 	if stage_id in [PipelineResultScript.STAGE_RIVERS, PipelineResultScript.STAGE_FINAL]:
 		_apply_river_summary(skeleton, tile)
+	if stage_id == PipelineResultScript.STAGE_FINAL:
+		_apply_lake_summary(skeleton, tile)
 	return tile
 
 func _sample_stage_height(sampler, world_x: int, world_y: int, stage_id: String) -> int:
@@ -97,7 +99,7 @@ func _apply_river_summary(skeleton, tile) -> void:
 		return
 	var river: Dictionary = skeleton.rivers[int(ids[0])]
 	tile.has_river = true
-	tile.river_flow = _polyline_direction(river["points"])
+	tile.river_flow = _polyline_direction_for_tile(river["points"], tile.offset.col, tile.offset.row, skeleton.sub_map_size)
 	tile.river_path_points = _normalized_polyline_points(river["points"], tile.offset.col, tile.offset.row, skeleton.sub_map_size)
 
 func _apply_mountain_summary(skeleton, tile) -> void:
@@ -108,6 +110,14 @@ func _apply_mountain_summary(skeleton, tile) -> void:
 	tile.ridge_path_points = _normalized_polyline_points(ridge["points"], tile.offset.col, tile.offset.row, skeleton.sub_map_size)
 	if not tile.terrain_tags.has("mountain"):
 		tile.terrain_tags.append("mountain")
+
+func _apply_lake_summary(skeleton, tile) -> void:
+	if not skeleton.lakes_by_tile.has(tile.tile_key):
+		return
+	if not tile.terrain_tags.has("lake"):
+		tile.terrain_tags.append("lake")
+	if not tile.terrain_tags.has("water"):
+		tile.terrain_tags.append("water")
 
 func _normalized_polyline_points(points: Array, tile_x: int, tile_y: int, sub_map_size: int) -> PackedVector2Array:
 	var result := PackedVector2Array()
@@ -126,6 +136,35 @@ func _polyline_direction(points: Array) -> Vector2i:
 		return Vector2i.ZERO
 	var delta: Vector2 = points[points.size() - 1] - points[0]
 	return Vector2i(_axis_sign(delta.x), _axis_sign(delta.y))
+
+func _polyline_direction_for_tile(points: Array, tile_x: int, tile_y: int, sub_map_size: int) -> Vector2i:
+	if points.size() < 2:
+		return Vector2i.ZERO
+	var tile_rect: Rect2 = Rect2(
+		Vector2(float(tile_x * sub_map_size), float(tile_y * sub_map_size)),
+		Vector2(float(sub_map_size), float(sub_map_size))
+	)
+	var tile_center: Vector2 = tile_rect.get_center()
+	var best_delta: Vector2 = Vector2.ZERO
+	var best_distance: float = INF
+	for index in range(points.size() - 1):
+		var a: Vector2 = points[index]
+		var b: Vector2 = points[index + 1]
+		if not _segment_bounds(a, b).grow(float(sub_map_size) * 0.12).intersects(tile_rect):
+			continue
+		var midpoint: Vector2 = (a + b) * 0.5
+		var distance: float = midpoint.distance_squared_to(tile_center)
+		if distance < best_distance:
+			best_distance = distance
+			best_delta = b - a
+	if best_delta == Vector2.ZERO:
+		return _polyline_direction(points)
+	return Vector2i(_axis_sign(best_delta.x), _axis_sign(best_delta.y))
+
+func _segment_bounds(a: Vector2, b: Vector2) -> Rect2:
+	var min_point: Vector2 = Vector2(minf(a.x, b.x), minf(a.y, b.y))
+	var max_point: Vector2 = Vector2(maxf(a.x, b.x), maxf(a.y, b.y))
+	return Rect2(min_point, max_point - min_point)
 
 func _dominant_biome(biome_counts: Dictionary) -> String:
 	var best := "plain"
