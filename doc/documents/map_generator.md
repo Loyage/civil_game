@@ -68,11 +68,14 @@ game/scenes/dev/MapGeneratorPreview.tscn
 - 输入 seed。
 - 输入 width / height。
 - 调整 `sub_map_size`，用于控制进入单个大地图地块后的局部地图边长。
+- 调整 `ocean_ratio`，用于控制海洋生成目标比例。
+- 调整 `mountain_count`。
 - 调整 `major_river_count`。
 - 调整 `continent_bias`。
 - 打开场景时不自动生成地图，右侧预览区保持空白并提示调整参数后生成。
 - 点击“生成地图”后才生成完整世界地图。
 - 点击“随机 Seed”只更新 seed 输入框，不立即生成地图。
+- 通过 `Stage` 下拉框切换基础地形、海洋、山脉、河流、环境和最终地貌阶段。
 - 切换视图：
   - 基础地貌
   - 海拔
@@ -152,20 +155,29 @@ MapGenerator.generate(config)
 
 ```text
 MapGenerator.generate(config)
+  -> MapGenerator.generate_pipeline(config)
+      -> final_map
+
+MapGenerator.generate_pipeline(config)
   -> WorldSkeletonGenerator.generate(config)
+      -> resolve sea_level from ocean_ratio
       -> _generate_mountain_ridges()
       -> _generate_major_rivers()
       -> _build_skeleton_tile_index()
-  -> BigMapSummaryGenerator.generate(config, skeleton)
+  -> BigMapSummaryGenerator.generate(config, skeleton, stage_id)
       -> _generate_tile_summary()
-          -> WorldFunctionSampler.sample_height()
+          -> WorldFunctionSampler.sample_base_height()
+          -> WorldFunctionSampler.sample_ocean_height()
+          -> WorldFunctionSampler.sample_mountain_delta()
           -> WorldFunctionSampler.sample_temperature()
           -> WorldFunctionSampler.sample_moisture()
           -> WorldFunctionSampler.sample_river_strength()
           -> WorldFunctionSampler.sample_biome()
-      -> _apply_river_summary()
-      -> _apply_mountain_summary()
+      -> _apply_river_summary() for river/final stages
+      -> _apply_mountain_summary() for mountain/final stages
 ```
+
+`generate(config)` 仍然是正式游戏入口，返回最终 `MapState`。`generate_pipeline(config)` 是调试和预览入口，返回 `MapGenerationPipelineResult`，其中包含最终地图和各阶段快照。
 
 ### 1. 读取生成配置
 
@@ -178,7 +190,8 @@ MapGenerator.generate(config)
 | `seed` | `260603` | 所有确定性随机的根输入。 |
 | `big_map_size` | `40` | 大地图边长，当前强制为方形。 |
 | `sub_map_size` | `256` | 每个大地图地块内部对应的小地图边长。 |
-| `sea_level` | `0` | 低于该高度视为海洋。 |
+| `sea_level` | `0` | 兼容字段；当前实际海平面由 `ocean_ratio` 从基础高度中求得。 |
+| `ocean_ratio` | `0.30` | 海洋生成目标比例，预览工具可调整。 |
 | `mountain_count` | `6` | 生成多少条全局山脉脊线。 |
 | `major_river_count` | `8` | 生成多少条主河流折线。 |
 | `summary_sample_resolution` | `4` | 每个大地图地块内部摘要采样为 `4 x 4` 点。 |
@@ -209,7 +222,22 @@ height = big_map_size
 | `mountains_by_tile` | 大地图地块到相关山脉 id 的索引。 |
 | `rivers_by_tile` | 大地图地块到相关河流 id 的索引。 |
 
-### 3. 生成山脉骨架
+### 3. 阶段快照
+
+`MapGenerationPipelineResult` 当前包含以下阶段：
+
+| 阶段 | 含义 | 预览显示 |
+| --- | --- | --- |
+| `base` | 根据 seed 和大陆偏置生成基础海拔。 | 基础高度灰度/渐变。 |
+| `ocean` | 根据 `ocean_ratio` 求海平面并浸没低地。 | 海洋 mask。 |
+| `mountains` | 生成山脉影响层。 | 山脉影响强度灰度图。 |
+| `rivers` | 生成主河流路径。 | 黑底河流路径。 |
+| `environment` | 采样温度和湿度。 | 当前以湿度梯度显示。 |
+| `final` | 合成最终高度、地貌、河流和渲染辅助数据。 | 完整大地图。 |
+
+正式游戏只使用 `final_map`。阶段快照主要服务于预览器和调试，不进入正式存档。
+
+### 4. 生成山脉骨架
 
 `_generate_mountain_ridges(config, skeleton)` 会按 `mountain_count` 创建多条全局山脉折线。
 
@@ -233,9 +261,11 @@ height = big_map_size
 
 山脉不是直接写入大地图地块的固定属性，而是在后续高度采样时通过“距离山脉折线的远近”产生抬升影响。
 
-### 4. 生成河流骨架
+### 5. 生成河流骨架
 
 `_generate_major_rivers(config, skeleton)` 会按 `major_river_count` 创建主河流折线。
+
+当前河流层只生成路径、流向、强度和大地图地块标记，不再对海拔执行河床下切，也不再为湿度采样叠加河流加成。
 
 每条河流当前包含：
 
@@ -248,13 +278,14 @@ height = big_map_size
 
 河流折线生成方法：
 
-1. 起点横坐标在全世界范围内随机。
-2. 起点纵坐标偏向世界上部 `0%..65%`。
-3. 7 个点沿纵向向下推进，整体覆盖约世界高度的 `80%`。
-4. 每个点加入横向漂移，形成弯曲河流。
-5. 坐标被限制在世界边界内。
+1. 在全世界范围内抽取多个候选点。
+2. 使用基础地形、海洋塑形和山脉影响后的高度，选择高海拔陆地作为源头。
+3. 在基础海拔低于当前海平面的候选点中选择海洋出口。
+4. 从源头到海洋出口插值生成 7 个点。
+5. 沿路径法线加入少量漂移，形成弯曲河流。
+6. 坐标被限制在世界边界内。
 
-当前河流是“全局走向折线”，还不是严格由高度场逐格下坡追踪出来的真实水文网络。它会在采样阶段影响高度、湿度和河流强度。
+当前河流是“全局走向折线”，还不是严格由高度场逐格下坡追踪出来的真实水文网络。它只生成路径、流向和强度数据，不直接改变高度或湿度。
 
 ### 5. 建立骨架索引
 
@@ -293,10 +324,10 @@ world_y = tile_row * sub_map_size + local_y
 -256..256
 ```
 
-当前公式：
+当前最终高度公式：
 
 ```text
-height = continent + detail + mountain - river_carving
+height = ocean_reshaped_base + mountain
 ```
 
 各部分含义：
@@ -305,8 +336,8 @@ height = continent + detail + mountain - river_carving
 | --- | --- |
 | `continent` | 中心大陆抬升，边缘衰减。 |
 | `detail` | 三层坐标 hash 噪声叠加。 |
+| `ocean_reshaped_base` | 根据 `ocean_ratio` 求得的海平面重塑低地深度。 |
 | `mountain` | 山脉折线附近增加高度，最高约 `150`。 |
-| `river_carving` | 河流附近下切高度，最高约 `46`。 |
 
 大陆基础高度：
 
@@ -330,12 +361,6 @@ detail =
 ```text
 mountain_influence = sum(ridge.strength * falloff(distance_to_ridge / ridge.width))
 mountain = mountain_influence * 150
-```
-
-河流下切：
-
-```text
-river_carving = river_strength * 46
 ```
 
 `falloff(t)` 当前是平方衰减：
@@ -372,13 +397,12 @@ temperature = clamp(latitude_temp - altitude_penalty + noise, 0, 1)
 当前公式：
 
 ```text
-moisture = base_noise + river_bonus + ocean_bonus
+moisture = base_noise + ocean_bonus
 ```
 
 | 因素 | 影响 |
 | --- | --- |
 | `base_noise` | 坐标 hash 产生的基础湿度。 |
-| `river_bonus` | 河流附近增加湿度，最高约 `0.34`。 |
 | `ocean_bonus` | 海洋区域增加 `0.16`。 |
 
 #### 河流强度采样

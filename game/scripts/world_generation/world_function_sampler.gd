@@ -10,11 +10,27 @@ func _init(init_skeleton = null) -> void:
 	skeleton = init_skeleton
 
 func sample_height(world_x: int, world_y: int) -> int:
-	var continent := _sample_continent_height(world_x, world_y)
-	var detail := _sample_height_noise(world_x, world_y)
-	var mountain := sample_mountain_influence(world_x, world_y) * 150.0
-	var river_carving := sample_river_strength(world_x, world_y) * 46.0
-	return clampi(int(round(continent + detail + mountain - river_carving)), MIN_HEIGHT, MAX_HEIGHT)
+	return sample_final_height(world_x, world_y)
+
+func sample_base_height(world_x: int, world_y: int) -> int:
+	return clampi(int(round(_sample_base_height_float(world_x, world_y))), MIN_HEIGHT, MAX_HEIGHT)
+
+func sample_ocean_height(world_x: int, world_y: int) -> int:
+	var base := sample_base_height(world_x, world_y)
+	if base >= skeleton.sea_level:
+		return base
+	var depth := clampf(float(skeleton.sea_level - base) / 180.0, 0.0, 1.0)
+	var reshaped: int = min(base, skeleton.sea_level - 4 - int(round(pow(depth, 1.35) * 96.0)))
+	return clampi(reshaped, MIN_HEIGHT, MAX_HEIGHT)
+
+func sample_mountain_delta(world_x: int, world_y: int) -> int:
+	return int(round(sample_mountain_influence(world_x, world_y) * 150.0))
+
+func sample_height_after_mountains(world_x: int, world_y: int) -> int:
+	return clampi(sample_ocean_height(world_x, world_y) + sample_mountain_delta(world_x, world_y), MIN_HEIGHT, MAX_HEIGHT)
+
+func sample_final_height(world_x: int, world_y: int) -> int:
+	return sample_height_after_mountains(world_x, world_y)
 
 func sample_temperature(world_x: int, world_y: int) -> float:
 	var world_size := float(skeleton.big_map_size * skeleton.sub_map_size)
@@ -27,9 +43,8 @@ func sample_temperature(world_x: int, world_y: int) -> float:
 
 func sample_moisture(world_x: int, world_y: int) -> float:
 	var base := 0.45 + (_hash01(202, world_x / 8, world_y / 8) - 0.5) * 0.42
-	var river_bonus := sample_river_strength(world_x, world_y) * 0.34
 	var ocean_bonus := 0.16 if sample_height(world_x, world_y) < skeleton.sea_level else 0.0
-	return clampf(base + river_bonus + ocean_bonus, 0.0, 1.0)
+	return clampf(base + ocean_bonus, 0.0, 1.0)
 
 func sample_river_strength(world_x: int, world_y: int) -> float:
 	var point := Vector2(float(world_x), float(world_y))
@@ -91,6 +106,9 @@ func _sample_height_noise(world_x: int, world_y: int) -> float:
 		(_hash01(302, world_x / 24, world_y / 24) - 0.5) * 48.0 +
 		(_hash01(303, world_x / 8, world_y / 8) - 0.5) * 20.0
 	)
+
+func _sample_base_height_float(world_x: int, world_y: int) -> float:
+	return _sample_continent_height(world_x, world_y) + _sample_height_noise(world_x, world_y)
 
 func _distance_to_polyline(point: Vector2, points: Array) -> float:
 	if points.is_empty():

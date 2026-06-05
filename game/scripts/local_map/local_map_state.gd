@@ -17,7 +17,7 @@ var slope_values: PackedInt32Array
 var average_height: int
 
 func _init() -> void:
-	version = 2
+	version = 3
 	world_seed = 0
 	tile_key = ""
 	tile_col = 0

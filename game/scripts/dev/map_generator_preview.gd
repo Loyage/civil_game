@@ -3,6 +3,7 @@ extends Control
 
 const MapGenerationConfigScript := preload("res://game/scripts/map_generation/map_generation_config.gd")
 const MapGeneratorScript := preload("res://game/scripts/map_generation/map_generator.gd")
+const PipelineResultScript := preload("res://game/scripts/map_generation/map_generation_pipeline_result.gd")
 const LocalMapGeneratorScript := preload("res://game/scripts/local_map/local_map_generator.gd")
 
 const VIEW_TERRAIN := 0
@@ -43,9 +44,12 @@ const TERRAIN_COLORS := {
 @onready var seed_input: SpinBox = %SeedInput
 @onready var width_input: SpinBox = %WidthInput
 @onready var sub_map_size_input: SpinBox = %SubMapSizeInput
+@onready var ocean_ratio_input: SpinBox = %OceanRatioInput
+@onready var mountain_count_input: SpinBox = %MountainCountInput
 @onready var river_count_input: SpinBox = %RiverCountInput
 @onready var continent_bias_input: SpinBox = %ContinentBiasInput
 @onready var view_mode_button: OptionButton = %ViewModeButton
+@onready var stage_button: OptionButton = %StageButton
 @onready var direction_overlay_toggle: CheckButton = %DirectionOverlayToggle
 @onready var generate_button: Button = %GenerateButton
 @onready var random_seed_button: Button = %RandomSeedButton
@@ -58,6 +62,8 @@ const TERRAIN_COLORS := {
 @onready var tile_info_label: Label = %TileInfoLabel
 
 var map_state
+var pipeline_result
+var current_stage_id := PipelineResultScript.STAGE_FINAL
 var local_map_state
 var preview_mode := MODE_WORLD
 var base_map_size := Vector2.ZERO
@@ -69,10 +75,12 @@ var selected_cell := Vector2i(-1, -1)
 
 func _ready() -> void:
 	_setup_view_modes()
+	_setup_stage_modes()
 	generate_button.pressed.connect(_generate_preview)
 	random_seed_button.pressed.connect(_randomize_seed)
 	local_map_button.pressed.connect(_toggle_local_map)
 	view_mode_button.item_selected.connect(func(_index: int) -> void: _render_preview())
+	stage_button.item_selected.connect(func(_index: int) -> void: _show_selected_stage())
 	direction_overlay_toggle.toggled.connect(func(_enabled: bool) -> void: _update_direction_overlay_visibility())
 	preview_viewport.resized.connect(_apply_view_transform)
 	preview_viewport.gui_input.connect(_handle_preview_gui_input)
@@ -100,9 +108,19 @@ func _setup_view_modes() -> void:
 	view_mode_button.add_item("走向", VIEW_DIRECTIONS)
 	view_mode_button.select(0)
 
+func _setup_stage_modes() -> void:
+	stage_button.clear()
+	for index in range(PipelineResultScript.STAGE_ORDER.size()):
+		var stage_id: String = PipelineResultScript.STAGE_ORDER[index]
+		stage_button.add_item(PipelineResultScript.new().get_label(stage_id), index)
+		stage_button.set_item_metadata(index, stage_id)
+	stage_button.select(PipelineResultScript.STAGE_ORDER.find(PipelineResultScript.STAGE_FINAL))
+
 func _generate_preview() -> void:
 	var config = _build_config_from_inputs()
-	map_state = MapGeneratorScript.new().generate(config)
+	pipeline_result = MapGeneratorScript.new().generate_pipeline(config)
+	current_stage_id = _selected_stage_id()
+	map_state = pipeline_result.get_stage(current_stage_id)
 	local_map_state = null
 	preview_mode = MODE_WORLD
 	selected_tile = Vector2i(-1, -1)
@@ -146,9 +164,11 @@ func _build_config_from_inputs():
 	config.width = config.big_map_size
 	config.height = config.big_map_size
 	config.sub_map_size = int(sub_map_size_input.value)
+	config.ocean_ratio = float(ocean_ratio_input.value)
 	config.start_city_col = clampi(int(config.big_map_size / 2), 0, max(0, config.big_map_size - 1))
 	config.start_city_row = clampi(int(config.big_map_size / 2), 0, max(0, config.big_map_size - 1))
 	config.start_city_name = "Preview"
+	config.mountain_count = int(mountain_count_input.value)
 	config.major_river_count = int(river_count_input.value)
 	config.generation_params["continent_bias"] = float(continent_bias_input.value)
 	config.generated_output_path = "user://generated_map_preview.json"
@@ -166,13 +186,32 @@ func _render_preview() -> void:
 	for row in range(map_state.height):
 		for col in range(map_state.width):
 			var tile = map_state.get_tile_by_offset(col, row)
-			image.set_pixel(col, row, _tile_color(tile, view_id))
+			image.set_pixel(col, row, _stage_tile_color(tile, view_id))
 
 	map_texture.texture = ImageTexture.create_from_image(image)
 	base_map_size = Vector2(float(map_state.width), float(map_state.height)) * BASE_TILE_SIZE
 	map_texture.size = base_map_size
 	_render_direction_overlay()
 	_update_selection_marker()
+
+func _stage_tile_color(tile, view_id: int) -> Color:
+	match current_stage_id:
+		PipelineResultScript.STAGE_BASE:
+			return _height_color(tile.elevation)
+		PipelineResultScript.STAGE_OCEAN:
+			if tile.biome == "ocean":
+				return Color("#1d4f78")
+			return Color("#202020")
+		PipelineResultScript.STAGE_MOUNTAINS:
+			return _gradient_color(clampf(float(tile.elevation) / 150.0, 0.0, 1.0), Color("#111111"), Color("#eeeeee"))
+		PipelineResultScript.STAGE_RIVERS:
+			if tile.has_river:
+				return Color("#34c6ff")
+			return Color("#000000")
+		PipelineResultScript.STAGE_ENVIRONMENT:
+			return _gradient_color(tile.moisture, Color("#5b4b30"), Color("#2f78c4"))
+		_:
+			return _tile_color(tile, view_id)
 
 func _render_local_map() -> void:
 	if local_map_state == null:
@@ -271,10 +310,13 @@ func _update_summary(config) -> void:
 		elevation_total += float(tile.elevation)
 
 	var total = max(1.0, float(map_state.width * map_state.height))
-	summary_label.text = "seed %d | %dx%d | major_river_count %d | continent_bias %.2f\n海洋 %.1f%%  山脉 %.1f%%  森林 %.1f%%  河流地块 %d  平均海拔 %.2f" % [
+	summary_label.text = "seed %d | %dx%d | stage %s | ocean_ratio %.2f | mountain_count %d | river_count %d | continent_bias %.2f\n海洋 %.1f%%  山脉 %.1f%%  森林 %.1f%%  河流地块 %d  平均海拔 %.2f" % [
 		config.seed,
 		config.width,
 		config.height,
+		PipelineResultScript.new().get_label(current_stage_id),
+		config.ocean_ratio,
+		config.mountain_count,
 		config.major_river_count,
 		float(config.generation_params.get("continent_bias", 0.0)),
 		float(counts["ocean"]) / total * 100.0,
@@ -394,19 +436,16 @@ func _update_direction_overlay_visibility() -> void:
 	if direction_overlay_texture == null:
 		return
 	var force_visible := view_mode_button.get_selected_id() == VIEW_DIRECTIONS
+	var supports_overlay := current_stage_id in [PipelineResultScript.STAGE_RIVERS, PipelineResultScript.STAGE_FINAL]
 	direction_overlay_texture.visible = (
 		preview_mode == MODE_WORLD
 		and map_state != null
+		and supports_overlay
 		and zoom_level >= DIRECTION_OVERLAY_FAR_ZOOM
 		and (direction_overlay_toggle.button_pressed or force_visible)
 	)
 
 func _draw_direction_paths_to_image(image: Image) -> void:
-	for tile in map_state.tiles_by_key.values():
-		if tile.ridge_path_points.size() >= 2:
-			var ridge_points := _tile_path_to_overlay_points(tile, tile.ridge_path_points)
-			_draw_overlay_polyline(image, ridge_points, DIRECTION_RIDGE_COLOR)
-			_draw_overlay_polyline(image, ridge_points, DIRECTION_RIDGE_HIGHLIGHT_COLOR)
 	for tile in map_state.tiles_by_key.values():
 		if not tile.has_river or tile.river_path_points.size() < 2:
 			continue
@@ -541,7 +580,7 @@ func _show_tile_info(coord: Vector2i) -> void:
 	if tile == null:
 		_show_empty_tile_info()
 		return
-	local_map_button.disabled = false
+	local_map_button.disabled = current_stage_id != PipelineResultScript.STAGE_FINAL
 
 	tile_info_label.text = "选中地块：%d, %d\n生物群系：%s\n标签：%s\n海拔 %d  最低 %d  最高 %d\n温度 %.2f  湿度 %.2f\n河流：%s  强度 %.2f\n流向：%d, %d" % [
 		tile.offset.col,
@@ -571,6 +610,8 @@ func _toggle_local_map() -> void:
 		_show_selected_tile_local_map()
 
 func _show_selected_tile_local_map() -> void:
+	if current_stage_id != PipelineResultScript.STAGE_FINAL:
+		return
 	if selected_tile == Vector2i(-1, -1):
 		return
 	var tile = map_state.get_tile_by_offset(selected_tile.x, selected_tile.y)
@@ -596,6 +637,30 @@ func _show_world_map() -> void:
 	_render_preview()
 	_update_summary(_build_config_from_inputs())
 	_show_tile_info(selected_tile)
+	_reset_view_deferred()
+
+func _selected_stage_id() -> String:
+	var metadata = stage_button.get_item_metadata(stage_button.selected)
+	if typeof(metadata) == TYPE_STRING:
+		return String(metadata)
+	return PipelineResultScript.STAGE_FINAL
+
+func _show_selected_stage() -> void:
+	if pipeline_result == null:
+		return
+	current_stage_id = _selected_stage_id()
+	map_state = pipeline_result.get_stage(current_stage_id)
+	local_map_state = null
+	preview_mode = MODE_WORLD
+	selected_tile = Vector2i(-1, -1)
+	selected_cell = Vector2i(-1, -1)
+	local_map_button.text = "查看小地图"
+	local_map_button.disabled = true
+	view_mode_button.disabled = false
+	direction_overlay_toggle.disabled = false
+	_render_preview()
+	_update_summary(_build_config_from_inputs())
+	_show_empty_tile_info()
 	_reset_view_deferred()
 
 func _update_summary_for_local_map(tile) -> void:

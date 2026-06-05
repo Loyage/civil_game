@@ -113,14 +113,14 @@ slope = max(abs(center_height - neighbor_height))
 
 ## 缓存版本
 
-本次算法改为复用 `WorldFunctionSampler` 后，缓存版本升级为：
+本次大地图生成改为阶段化图层合成后，`WorldFunctionSampler` 的高度语义发生变化，缓存版本升级为：
 
 ```text
-CACHE_VERSION = 2
-LocalMapState.version = 2
+CACHE_VERSION = 3
+LocalMapState.version = 3
 ```
 
-旧版缓存路径 `v1` 不会被读取，新生成的小地图会写入 `v2` 目录。
+旧版缓存路径不会被读取，新生成的小地图会写入 `v3` 目录。
 
 同一个缓存版本下，缓存读取还会校验 `width` 和 `height` 是否等于当前配置的 `sub_map_size`。如果玩家调整小地图边长，旧尺寸缓存不会被复用，会重新生成对应尺寸的小地图。
 
@@ -139,6 +139,7 @@ LocalMapState.version = 2
 ## 当前限制
 
 - 小地图地格信息面板尚未实现。
+- 小地图当前仍直接使用最终世界骨架和 `WorldFunctionSampler` 采样，没有迁移到 `MapGenerationPipelineResult` 的阶段快照系统。后续应复用同一套“基础地形、海洋、山脉、河流、环境、最终地貌”的图层合成思路，避免大地图和小地图生成语义分叉。
 - 河流寻路是基础成本寻路，还没有完整水文约束。
 - 山脉目前通过全局高度采样自然体现，尚未沿大地图 `ridge_path_points` 额外强化局部山脊。
 - 湖泊、湿地、植被和资源暂未在小地图数据结构中细化。

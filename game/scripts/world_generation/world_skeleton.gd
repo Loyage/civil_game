@@ -5,6 +5,7 @@ var seed: int
 var big_map_size: int
 var sub_map_size: int
 var sea_level: int
+var ocean_ratio: float
 var continent_bias: float
 var mountain_ridges: Array
 var rivers: Array
@@ -16,6 +17,7 @@ func _init() -> void:
 	big_map_size = 40
 	sub_map_size = 256
 	sea_level = 0
+	ocean_ratio = 0.30
 	continent_bias = 0.26
 	mountain_ridges = []
 	rivers = []

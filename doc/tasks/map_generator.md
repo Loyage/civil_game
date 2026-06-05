@@ -95,6 +95,9 @@ MapRoot
 - `width`
 - `height`
 - `seed`
+- `ocean_ratio`
+- `mountain_count`
+- `major_river_count`
 - `generated_output_path`
 - `start_city_col`
 - `start_city_row`
@@ -115,7 +118,28 @@ MapRoot
 
 骨架不保存每个小地图地格的完整地形，只保存能影响连续函数采样的大尺度结构。
 
-### 阶段 3：连续函数采样
+主河流先从候选点中选择高海拔陆地源头，再选择海洋出口，最后在两者之间生成带少量漂移的折线。当前河流只写入路径、流向和强度，不直接下切高度或增加湿度。
+
+### 阶段 3：阶段化图层快照
+
+新增 `MapGenerationPipelineResult`：
+
+- `final_map`
+- `stage_maps`
+- `stage_labels`
+
+预览器点击“生成地图”时一次性生成以下阶段：
+
+- 基础地形
+- 海洋
+- 山脉
+- 河流
+- 环境
+- 最终地貌
+
+正式游戏继续调用 `MapGenerator.generate(config)`，只取得最终 `MapState`。
+
+### 阶段 4：连续函数采样
 
 `WorldFunctionSampler` 只接受全局坐标采样：
 
@@ -170,7 +194,7 @@ worldY = tileY * subMapSize + localY
 
 预览工具原则：
 
-- 只调用正式 `MapGenerator.generate(config)`。
+- 只调用正式生成器入口。正式游戏使用 `MapGenerator.generate(config)`，预览工具使用同一生成器的 `generate_pipeline(config)` 调试入口。
 - 不复制、不分叉地图生成逻辑。
 - 不进入正式游戏流程。
 - 不影响 `MapRoot`、存档、UI 主流程。
@@ -187,8 +211,12 @@ game/scripts/dev/map_generator_preview.gd
 
 - 输入 seed。
 - 输入 width / height。
+- 输入 `ocean_ratio`。
+- 输入 `mountain_count`。
 - 打开预览工具时不自动生成地图。
 - 点击“生成地图”后显示完整世界地图。
+- 点击“生成地图”后一次性生成所有阶段快照。
+- 支持通过 `Stage` 下拉框切换基础地形、海洋、山脉、河流、环境和最终地貌。
 - 支持随机 seed，但随机按钮只更新 seed 输入框，不立即生成地图。
 - 支持重新生成。
 - 显示当前 seed 和主要生成参数。
@@ -368,6 +396,10 @@ MapGeneratorPreview
 - [x] 实现预览工具“显示走向”开关
 - [x] 实现预览工具“走向”独立视图
 - [x] 实现河流方向箭头
+- [x] 实现阶段化地图生成结果 `MapGenerationPipelineResult`
+- [x] 实现基础地形 / 海洋 / 山脉 / 河流 / 环境 / 最终地貌阶段快照
+- [x] 实现预览工具阶段下拉框
+- [x] 实现 `ocean_ratio` 预览参数
 - [x] 实现远景缩放隐藏走向细节
 - [x] 确保预览工具复用正式 `MapGenerator.generate(config)`
 - [x] 设计生成参数调节面板

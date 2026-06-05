@@ -1,7 +1,7 @@
 class_name LocalMapService
 extends RefCounted
 
-const CACHE_VERSION := 2
+const CACHE_VERSION := 3
 const CACHE_MAGIC := "CLM1"
 const CACHE_ROOT := "user://local_maps"
 const MAP_CONFIG_PATH := "res://game/data/maps/map_generation_config.json"
@@ -60,7 +60,7 @@ func _load_cache(tile):
 	state.height = int(data.get("height", 0))
 	state.average_height = int(data.get("average_height", 0))
 
-	var expected_size := max(2, int(generation_config.sub_map_size))
+	var expected_size: int = max(2, int(generation_config.sub_map_size))
 	if state.world_seed != world_seed or state.tile_key != tile.tile_key or state.width != expected_size or state.height != expected_size:
 		return null
 

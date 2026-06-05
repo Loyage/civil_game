@@ -7,6 +7,7 @@ var height: int
 var big_map_size: int
 var sub_map_size: int
 var sea_level: int
+var ocean_ratio: float
 var mountain_count: int
 var major_river_count: int
 var summary_sample_resolution: int
@@ -25,6 +26,7 @@ func _init() -> void:
 	big_map_size = 40
 	sub_map_size = 256
 	sea_level = 0
+	ocean_ratio = 0.30
 	mountain_count = 6
 	major_river_count = 8
 	summary_sample_resolution = 4
@@ -54,6 +56,7 @@ func load_from_dictionary(data: Dictionary) -> void:
 	height = big_map_size
 	sub_map_size = int(data.get("sub_map_size", data.get("subMapSize", sub_map_size)))
 	sea_level = int(data.get("sea_level", data.get("seaLevel", sea_level)))
+	ocean_ratio = float(data.get("ocean_ratio", data.get("oceanRatio", ocean_ratio)))
 	mountain_count = int(data.get("mountain_count", data.get("mountainCount", mountain_count)))
 	major_river_count = int(data.get("major_river_count", data.get("majorRiverCount", major_river_count)))
 	summary_sample_resolution = int(data.get("summary_sample_resolution", data.get("summarySampleResolution", summary_sample_resolution)))
@@ -76,6 +79,7 @@ func to_dictionary() -> Dictionary:
 		"big_map_size": big_map_size,
 		"sub_map_size": sub_map_size,
 		"sea_level": sea_level,
+		"ocean_ratio": ocean_ratio,
 		"mountain_count": mountain_count,
 		"major_river_count": major_river_count,
 		"summary_sample_resolution": summary_sample_resolution,
