@@ -2,6 +2,8 @@ class_name WorldSkeletonGenerator
 extends RefCounted
 
 const WorldSkeletonScript := preload("res://game/scripts/world_generation/world_skeleton.gd")
+const RIVER_START_WIDTH := 3.0
+const RIVER_MAX_WIDTH := 12.0
 
 func generate(config):
 	var skeleton = WorldSkeletonScript.new()
@@ -10,9 +12,9 @@ func generate(config):
 	skeleton.sub_map_size = config.sub_map_size
 	skeleton.ocean_ratio = clampf(float(config.ocean_ratio), 0.0, 0.95)
 	skeleton.continent_bias = float(config.generation_params.get("continent_bias", skeleton.continent_bias))
-	skeleton.sea_level = _resolve_sea_level(config, skeleton)
 	_generate_mountain_ridges(config, skeleton)
-	_generate_major_rivers(config, skeleton)
+	skeleton.sea_level = _resolve_sea_level(config, skeleton)
+	_generate_rivers(config, skeleton)
 	_build_skeleton_tile_index(skeleton)
 	return skeleton
 
@@ -22,7 +24,7 @@ func _resolve_sea_level(config, skeleton) -> int:
 		for col in range(config.big_map_size):
 			var world_x: int = int((float(col) + 0.5) * float(config.sub_map_size))
 			var world_y: int = int((float(row) + 0.5) * float(config.sub_map_size))
-			heights.append(int(round(_sample_base_height(config.seed, skeleton, world_x, world_y))))
+			heights.append(_sample_height_after_mountains(config.seed, skeleton, world_x, world_y))
 	if heights.is_empty():
 		return config.sea_level
 	heights.sort()
@@ -53,65 +55,129 @@ func _generate_mountain_ridges(config, skeleton) -> void:
 			"roughness": 0.35 + _hash01(config.seed, 107 + id, 0, 0) * 0.50
 		})
 
-func _generate_major_rivers(config, skeleton) -> void:
-	var world_size := float(config.big_map_size * config.sub_map_size)
-	for id in range(config.major_river_count):
-		var start := _pick_river_source(config, skeleton, id)
-		var mouth := _pick_river_mouth(config, skeleton, id, start)
-		var main_direction := (mouth - start).normalized()
-		var normal := Vector2(-main_direction.y, main_direction.x)
-		var points: Array[Vector2] = []
-		for point_index in range(7):
-			var t := float(point_index) / 6.0
-			var drift := (_hash01(config.seed, 202 + id, point_index, 0) - 0.5) * world_size * 0.10
-			var point := start.lerp(mouth, t) + normal * drift * sin(t * PI)
-			points.append(Vector2(
-				clampf(point.x, 0.0, world_size - 1.0),
-				clampf(point.y, 0.0, world_size - 1.0)
-			))
-		skeleton.rivers.append({
-			"id": id,
-			"points": points,
-			"width": 18.0 + _hash01(config.seed, 203 + id, 0, 0) * 24.0,
-			"flow": 0.65 + _hash01(config.seed, 204 + id, 0, 0) * 0.35
-		})
-
-func _pick_river_source(config, skeleton, river_id: int) -> Vector2:
-	var world_size := float(config.big_map_size * config.sub_map_size)
-	var best := Vector2(world_size * 0.5, world_size * 0.25)
-	var best_score := -INF
-	for candidate_index in range(32):
-		var point := Vector2(
-			_hash01(config.seed, 211 + river_id, candidate_index, 0) * world_size,
-			_hash01(config.seed, 211 + river_id, candidate_index, 1) * world_size
-		)
-		var height := _sample_layered_height(config.seed, skeleton, int(point.x), int(point.y))
-		if height <= skeleton.sea_level + 24:
+func _generate_rivers(config, skeleton) -> void:
+	for id in range(config.river_source_count):
+		var source_tile: Vector2i = _pick_river_source_tile(config, skeleton, id)
+		var river: Dictionary = _trace_river(config, skeleton, id, source_tile)
+		if river["points"].size() < 2:
 			continue
-		var score := float(height) + _hash01(config.seed, 212 + river_id, candidate_index, 0) * 32.0
-		if score > best_score:
-			best = point
-			best_score = score
-	return best
+		river["id"] = skeleton.rivers.size()
+		skeleton.rivers.append(river)
 
-func _pick_river_mouth(config, skeleton, river_id: int, source: Vector2) -> Vector2:
-	var world_size := float(config.big_map_size * config.sub_map_size)
-	var best := Vector2(source.x, world_size - 1.0)
+func _pick_river_source_tile(config, skeleton, river_id: int) -> Vector2i:
+	var best := Vector2i(config.big_map_size / 2, config.big_map_size / 2)
 	var best_score := -INF
 	for candidate_index in range(48):
-		var point := Vector2(
-			_hash01(config.seed, 221 + river_id, candidate_index, 0) * world_size,
-			_hash01(config.seed, 221 + river_id, candidate_index, 1) * world_size
+		var tile := Vector2i(
+			clampi(int(floor(_hash01(config.seed, 211 + river_id, candidate_index, 0) * float(config.big_map_size))), 0, config.big_map_size - 1),
+			clampi(int(floor(_hash01(config.seed, 211 + river_id, candidate_index, 1) * float(config.big_map_size))), 0, config.big_map_size - 1)
 		)
-		var base_height := int(round(_sample_base_height(config.seed, skeleton, int(point.x), int(point.y))))
-		if base_height >= skeleton.sea_level:
+		var point: Vector2 = _tile_center(config, tile)
+		var height: int = _sample_layered_height(config.seed, skeleton, int(point.x), int(point.y))
+		var mountain: float = _sample_mountain_influence(skeleton, int(point.x), int(point.y))
+		if height <= skeleton.sea_level + 24 or mountain <= 0.08:
 			continue
-		var distance_score: float = source.distance_to(point) / max(1.0, world_size)
-		var score: float = distance_score * 120.0 + _hash01(config.seed, 222 + river_id, candidate_index, 0) * 24.0
+		var score: float = float(height) + mountain * 160.0 + _hash01(config.seed, 212 + river_id, candidate_index, 0) * 16.0
 		if score > best_score:
-			best = point
+			best = tile
 			best_score = score
+	if not skeleton.lakes.is_empty() and _hash01(config.seed, 213 + river_id, 0, 0) < 0.35:
+		var lake_index := int(floor(_hash01(config.seed, 214 + river_id, 0, 0) * float(skeleton.lakes.size())))
+		var lake: Dictionary = skeleton.lakes[clampi(lake_index, 0, skeleton.lakes.size() - 1)]
+		var lake_tile: Variant = lake.get("tile", best)
+		if typeof(lake_tile) == TYPE_VECTOR2I:
+			best = lake_tile as Vector2i
 	return best
+
+func _trace_river(config, skeleton, river_id: int, source_tile: Vector2i) -> Dictionary:
+	var tiles: Array[Vector2i] = [source_tile]
+	var current := source_tile
+	var merge_target := -1
+	var max_steps: int = int(config.big_map_size) * 3
+	for step in range(max_steps):
+		if _is_ocean_tile(config, skeleton, current):
+			break
+		var joined_river: int = _near_existing_river(config, skeleton, current)
+		if joined_river >= 0:
+			merge_target = joined_river
+			break
+		var next: Vector2i = _next_downhill_tile(config, skeleton, current)
+		if next == current:
+			_register_lake(skeleton, current)
+			break
+		current = next
+		if tiles.has(current):
+			_register_lake(skeleton, current)
+			break
+		tiles.append(current)
+	var points: Array[Vector2] = _tiles_to_points(config, tiles)
+	return {
+		"id": river_id,
+		"points": points,
+		"width_profile": _river_width_profile(tiles.size(), merge_target >= 0),
+		"width": RIVER_MAX_WIDTH,
+		"flow": 1.0,
+		"merge_target": merge_target
+	}
+
+func _next_downhill_tile(config, skeleton, tile: Vector2i) -> Vector2i:
+	var current_height: int = _tile_height(config, skeleton, tile)
+	var best := tile
+	var best_height := current_height
+	for direction in _directions8():
+		var candidate := tile + direction
+		if candidate.x < 0 or candidate.y < 0 or candidate.x >= config.big_map_size or candidate.y >= config.big_map_size:
+			continue
+		var height: int = _tile_height(config, skeleton, candidate)
+		if height < best_height:
+			best = candidate
+			best_height = height
+	return best
+
+func _near_existing_river(config, skeleton, tile: Vector2i) -> int:
+	var point: Vector2 = _tile_center(config, tile)
+	for river in skeleton.rivers:
+		var distance: float = _distance_to_polyline(point, river["points"])
+		if distance <= float(river.get("width", RIVER_MAX_WIDTH)):
+			return int(river["id"])
+	return -1
+
+func _register_lake(skeleton, tile: Vector2i) -> void:
+	var lake_id: int = skeleton.lakes.size()
+	skeleton.lakes.append({
+		"id": lake_id,
+		"tile": tile
+	})
+	skeleton.add_lake_to_tile(tile.x, tile.y, lake_id)
+
+func _river_width_profile(tile_count: int, has_merge: bool) -> Array[float]:
+	var result: Array[float] = []
+	var growth_denominator: float = max(1.0, float(tile_count - 1))
+	for index in range(tile_count):
+		var distance_growth: float = float(index) / growth_denominator
+		var merge_growth: float = 0.22 if has_merge else 0.0
+		result.append(lerpf(RIVER_START_WIDTH, RIVER_MAX_WIDTH, clampf(distance_growth * 0.78 + merge_growth, 0.0, 1.0)))
+	return result
+
+func _tiles_to_points(config, tiles: Array[Vector2i]) -> Array[Vector2]:
+	var result: Array[Vector2] = []
+	for tile in tiles:
+		result.append(_tile_center(config, tile))
+	return result
+
+func _tile_center(config, tile: Vector2i) -> Vector2:
+	return Vector2(
+		(float(tile.x) + 0.5) * float(config.sub_map_size),
+		(float(tile.y) + 0.5) * float(config.sub_map_size)
+	)
+
+func _tile_height(config, skeleton, tile: Vector2i) -> int:
+	var point: Vector2 = _tile_center(config, tile)
+	return _sample_layered_height(config.seed, skeleton, int(point.x), int(point.y))
+
+func _is_ocean_tile(config, skeleton, tile: Vector2i) -> bool:
+	var point: Vector2 = _tile_center(config, tile)
+	return int(round(_sample_base_height(config.seed, skeleton, int(point.x), int(point.y)))) < skeleton.sea_level
 
 func _build_skeleton_tile_index(skeleton) -> void:
 	for ridge in skeleton.mountain_ridges:
@@ -154,12 +220,18 @@ func _sample_base_height(seed: int, skeleton, world_x: int, world_y: int) -> flo
 	return continent + detail
 
 func _sample_layered_height(seed: int, skeleton, world_x: int, world_y: int) -> int:
-	var base := int(round(_sample_base_height(seed, skeleton, world_x, world_y)))
-	var ocean := base
-	if base < skeleton.sea_level:
-		var depth := clampf(float(skeleton.sea_level - base) / 180.0, 0.0, 1.0)
-		ocean = min(base, skeleton.sea_level - 4 - int(round(pow(depth, 1.35) * 96.0)))
-	return clampi(ocean + int(round(_sample_mountain_influence(skeleton, world_x, world_y) * 150.0)), -256, 256)
+	var height_after_mountains: int = _sample_height_after_mountains(seed, skeleton, world_x, world_y)
+	if height_after_mountains >= skeleton.sea_level:
+		return height_after_mountains
+	var depth := clampf(float(skeleton.sea_level - height_after_mountains) / 180.0, 0.0, 1.0)
+	return clampi(min(height_after_mountains, skeleton.sea_level - 4 - int(round(pow(depth, 1.35) * 96.0))), -256, 256)
+
+func _sample_height_after_mountains(seed: int, skeleton, world_x: int, world_y: int) -> int:
+	return clampi(
+		int(round(_sample_base_height(seed, skeleton, world_x, world_y))) + int(round(_sample_mountain_influence(skeleton, world_x, world_y) * 150.0)),
+		-256,
+		256
+	)
 
 func _sample_mountain_influence(skeleton, world_x: int, world_y: int) -> float:
 	var point := Vector2(float(world_x), float(world_y))
@@ -191,3 +263,15 @@ func _falloff(t: float) -> float:
 	if t >= 1.0:
 		return 0.0
 	return (1.0 - t) * (1.0 - t)
+
+func _directions8() -> Array[Vector2i]:
+	return [
+		Vector2i(1, 0),
+		Vector2i(1, -1),
+		Vector2i(0, -1),
+		Vector2i(-1, -1),
+		Vector2i(-1, 0),
+		Vector2i(-1, 1),
+		Vector2i(0, 1),
+		Vector2i(1, 1)
+	]

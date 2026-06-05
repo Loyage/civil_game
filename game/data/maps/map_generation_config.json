@@ -7,7 +7,7 @@
   "sea_level": 0,
   "ocean_ratio": 0.3,
   "mountain_count": 6,
-  "major_river_count": 8,
+  "river_source_count": 8,
   "summary_sample_resolution": 4,
   "seed": 260603,
   "generated_output_path": "user://generated_map.json",

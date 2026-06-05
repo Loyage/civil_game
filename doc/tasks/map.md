@@ -123,7 +123,7 @@ var tiles_by_key: Dictionary
 ### 地图生成流程
 
 1. `MapLoader` 从 `game/data/maps/map_generation_config.json` 读取生成配置。
-2. `MapGenerator` 调用 `WorldSkeletonGenerator` 生成全局山脉折线和主河流折线。
+2. `MapGenerator` 调用 `WorldSkeletonGenerator` 生成全局山脉折线、河流下坡路径和湖泊。
 3. `BigMapSummaryGenerator` 对每个大地图地块内部执行摘要采样。
 4. `WorldFunctionSampler` 基于全局坐标采样高度、温度、湿度、河流强度和 biome。
 5. 根据采样结果创建 `MapState` 和 `TileState` 集合。

@@ -61,6 +61,8 @@ func _generate_tile_summary(config, skeleton, sampler, col: int, row: int, stage
 		_apply_mountain_summary(skeleton, tile)
 	if stage_id in [PipelineResultScript.STAGE_RIVERS, PipelineResultScript.STAGE_FINAL]:
 		_apply_river_summary(skeleton, tile)
+	if stage_id == PipelineResultScript.STAGE_FINAL:
+		_apply_lake_summary(skeleton, tile)
 	return tile
 
 func _sample_stage_height(sampler, world_x: int, world_y: int, stage_id: String) -> int:
@@ -108,6 +110,14 @@ func _apply_mountain_summary(skeleton, tile) -> void:
 	tile.ridge_path_points = _normalized_polyline_points(ridge["points"], tile.offset.col, tile.offset.row, skeleton.sub_map_size)
 	if not tile.terrain_tags.has("mountain"):
 		tile.terrain_tags.append("mountain")
+
+func _apply_lake_summary(skeleton, tile) -> void:
+	if not skeleton.lakes_by_tile.has(tile.tile_key):
+		return
+	if not tile.terrain_tags.has("lake"):
+		tile.terrain_tags.append("lake")
+	if not tile.terrain_tags.has("water"):
+		tile.terrain_tags.append("water")
 
 func _normalized_polyline_points(points: Array, tile_x: int, tile_y: int, sub_map_size: int) -> PackedVector2Array:
 	var result := PackedVector2Array()

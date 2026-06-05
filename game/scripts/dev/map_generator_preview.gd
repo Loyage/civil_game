@@ -46,7 +46,7 @@ const TERRAIN_COLORS := {
 @onready var sub_map_size_input: SpinBox = %SubMapSizeInput
 @onready var ocean_ratio_input: SpinBox = %OceanRatioInput
 @onready var mountain_count_input: SpinBox = %MountainCountInput
-@onready var river_count_input: SpinBox = %RiverCountInput
+@onready var river_source_count_input: SpinBox = %RiverSourceCountInput
 @onready var continent_bias_input: SpinBox = %ContinentBiasInput
 @onready var view_mode_button: OptionButton = %ViewModeButton
 @onready var stage_button: OptionButton = %StageButton
@@ -169,7 +169,7 @@ func _build_config_from_inputs():
 	config.start_city_row = clampi(int(config.big_map_size / 2), 0, max(0, config.big_map_size - 1))
 	config.start_city_name = "Preview"
 	config.mountain_count = int(mountain_count_input.value)
-	config.major_river_count = int(river_count_input.value)
+	config.river_source_count = int(river_source_count_input.value)
 	config.generation_params["continent_bias"] = float(continent_bias_input.value)
 	config.generated_output_path = "user://generated_map_preview.json"
 	return config
@@ -310,14 +310,14 @@ func _update_summary(config) -> void:
 		elevation_total += float(tile.elevation)
 
 	var total = max(1.0, float(map_state.width * map_state.height))
-	summary_label.text = "seed %d | %dx%d | stage %s | ocean_ratio %.2f | mountain_count %d | river_count %d | continent_bias %.2f\n海洋 %.1f%%  山脉 %.1f%%  森林 %.1f%%  河流地块 %d  平均海拔 %.2f" % [
+	summary_label.text = "seed %d | %dx%d | stage %s | ocean_ratio %.2f | mountain_count %d | river_source_count %d | continent_bias %.2f\n海洋 %.1f%%  山脉 %.1f%%  森林 %.1f%%  河流地块 %d  平均海拔 %.2f" % [
 		config.seed,
 		config.width,
 		config.height,
 		PipelineResultScript.new().get_label(current_stage_id),
 		config.ocean_ratio,
 		config.mountain_count,
-		config.major_river_count,
+		config.river_source_count,
 		float(config.generation_params.get("continent_bias", 0.0)),
 		float(counts["ocean"]) / total * 100.0,
 		float(counts["mountain"]) / total * 100.0,
