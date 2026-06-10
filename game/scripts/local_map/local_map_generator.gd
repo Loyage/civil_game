@@ -72,12 +72,9 @@ func _prepare_sampler_for_tile(tile) -> void:
 
 func _filter_structures_for_tile(tile, structures: Array) -> Array:
 	var result: Array = []
-	var tile_rect := Rect2(
-		Vector2(float(tile.offset.col * _tile_global_step()), float(tile.offset.row * _tile_global_step())),
-		Vector2(float(local_map_size), float(local_map_size))
-	)
+	var tile_rect: Rect2 = _tile_world_rect(tile)
 	for structure in structures:
-		var influence_width := float(structure.get("width", 0.0))
+		var influence_width: float = float(structure.get("width", 0.0))
 		if _polyline_intersects_rect(structure["points"], tile_rect, influence_width + 4.0):
 			result.append(structure)
 	return result
@@ -125,11 +122,121 @@ func _find_refined_river_path(state, tile) -> Array[Vector2i]:
 	return result
 
 func _river_control_cells(tile) -> Array[Vector2i]:
+	var global_controls: Array[Vector2i] = _river_control_cells_from_global_path(tile)
+	if global_controls.size() >= 2:
+		return global_controls
+
 	var result: Array[Vector2i] = []
 	_append_unique_cell(result, _river_start_cell(tile))
 	for point in tile.river_path_points:
 		_append_unique_cell(result, _normalized_to_cell(point))
 	_append_unique_cell(result, _river_goal_cell(tile))
+	return result
+
+func _river_control_cells_from_global_path(tile) -> Array[Vector2i]:
+	var river: Dictionary = _river_for_tile(tile)
+	if river.is_empty():
+		return _empty_vector2i_array()
+	var points: Array = river.get("points", [])
+	if points.size() < 2:
+		return _empty_vector2i_array()
+
+	var result: Array[Vector2i] = []
+	var tile_rect: Rect2 = _tile_world_rect(tile)
+	for index in range(points.size() - 1):
+		var clipped: Array[Vector2] = _clip_segment_to_rect(points[index], points[index + 1], tile_rect)
+		if clipped.is_empty():
+			continue
+		_append_unique_cell(result, _world_point_to_cell(tile, clipped[0]))
+		_append_unique_cell(result, _world_point_to_cell(tile, clipped[1]))
+	return result
+
+func _river_for_tile(tile) -> Dictionary:
+	var ids: Array = skeleton.rivers_by_tile.get(tile.tile_key, [])
+	if ids.is_empty():
+		return {}
+	var river_id: int = int(ids[0])
+	if river_id < 0 or river_id >= skeleton.rivers.size():
+		return {}
+	return skeleton.rivers[river_id]
+
+func _tile_world_rect(tile) -> Rect2:
+	return Rect2(
+		Vector2(float(tile.offset.col * config.sub_map_size), float(tile.offset.row * config.sub_map_size)),
+		Vector2(float(config.sub_map_size), float(config.sub_map_size))
+	)
+
+func _world_point_to_cell(tile, point: Vector2) -> Vector2i:
+	var origin: Vector2 = Vector2(float(tile.offset.col * config.sub_map_size), float(tile.offset.row * config.sub_map_size))
+	var normalized: Vector2 = (point - origin) / float(config.sub_map_size)
+	return _normalized_to_cell(Vector2(clampf(normalized.x, 0.0, 1.0), clampf(normalized.y, 0.0, 1.0)))
+
+func _clip_segment_to_rect(a: Vector2, b: Vector2, rect: Rect2) -> Array[Vector2]:
+	var t0: float = 0.0
+	var t1: float = 1.0
+	var delta: Vector2 = b - a
+	var clip: Array[float] = _clip_axis(-delta.x, a.x - rect.position.x, t0, t1)
+	if clip.is_empty():
+		return _empty_vector2_array()
+	t0 = float(clip[0])
+	t1 = float(clip[1])
+	clip = _clip_axis(delta.x, rect.position.x + rect.size.x - a.x, t0, t1)
+	if clip.is_empty():
+		return _empty_vector2_array()
+	t0 = float(clip[0])
+	t1 = float(clip[1])
+	clip = _clip_axis(-delta.y, a.y - rect.position.y, t0, t1)
+	if clip.is_empty():
+		return _empty_vector2_array()
+	t0 = float(clip[0])
+	t1 = float(clip[1])
+	clip = _clip_axis(delta.y, rect.position.y + rect.size.y - a.y, t0, t1)
+	if clip.is_empty():
+		return _empty_vector2_array()
+	t0 = float(clip[0])
+	t1 = float(clip[1])
+	var result: Array[Vector2] = []
+	result.append(a + delta * t0)
+	result.append(a + delta * t1)
+	return result
+
+func _clip_axis(p: float, q: float, t0: float, t1: float) -> Array[float]:
+	if is_zero_approx(p):
+		if q >= 0.0:
+			return _float_pair(t0, t1)
+		return _empty_float_array()
+	var r: float = q / p
+	if p < 0.0:
+		if r > t1:
+			return _empty_float_array()
+		t0 = maxf(t0, r)
+	else:
+		if r < t0:
+			return _empty_float_array()
+		t1 = minf(t1, r)
+	return _float_pair(t0, t1)
+
+func _float_pair(a: float, b: float) -> Array[float]:
+	var result: Array[float] = []
+	result.append(a)
+	result.append(b)
+	return result
+
+func _empty_float_array() -> Array[float]:
+	var result: Array[float] = []
+	return result
+
+func _empty_vector2_array() -> Array[Vector2]:
+	var result: Array[Vector2] = []
+	return result
+
+func _empty_vector2i_array() -> Array[Vector2i]:
+	var result: Array[Vector2i] = []
+	return result
+
+func _single_vector2i_array(cell: Vector2i) -> Array[Vector2i]:
+	var result: Array[Vector2i] = []
+	result.append(cell)
 	return result
 
 func _append_unique_cell(cells: Array[Vector2i], cell: Vector2i) -> void:
@@ -138,7 +245,7 @@ func _append_unique_cell(cells: Array[Vector2i], cell: Vector2i) -> void:
 
 func _find_river_path_segment(state, start: Vector2i, goal: Vector2i) -> Array[Vector2i]:
 	if start == goal:
-		return [start]
+		return _single_vector2i_array(start)
 
 	var open: Array[Vector2i] = [start]
 	var came_from = {}
@@ -297,8 +404,6 @@ func _carve_river_at(state, center_x: int, center_y: int, width: float, depth: f
 				continue
 			var index = state.index(x, y)
 			state.river_flags[index] = 1
-			if x == 0 or y == 0 or x == state.width - 1 or y == state.height - 1:
-				continue
 			var falloff: float = 1.0 - clampf(distance / radius, 0.0, 1.0)
 			var cut_amount: int = int(round(depth * falloff))
 			var water_target: int = SEA_LEVEL - maxi(2, int(round(depth * 0.35 * falloff)))
@@ -338,9 +443,6 @@ func _build_config(init_config):
 	result.sub_map_size = max(2, int(result.sub_map_size))
 	return result
 
-func _tile_global_step() -> int:
-	return max(1, local_map_size - 1)
-
 func _axis_sign(value: float) -> int:
 	if value < -0.1:
 		return -1
@@ -349,13 +451,13 @@ func _axis_sign(value: float) -> int:
 	return 0
 
 func _directions8() -> Array[Vector2i]:
-	return [
-		Vector2i(1, 0),
-		Vector2i(1, -1),
-		Vector2i(0, -1),
-		Vector2i(-1, -1),
-		Vector2i(-1, 0),
-		Vector2i(-1, 1),
-		Vector2i(0, 1),
-		Vector2i(1, 1)
-	]
+	var result: Array[Vector2i] = []
+	result.append(Vector2i(1, 0))
+	result.append(Vector2i(1, -1))
+	result.append(Vector2i(0, -1))
+	result.append(Vector2i(-1, -1))
+	result.append(Vector2i(-1, 0))
+	result.append(Vector2i(-1, 1))
+	result.append(Vector2i(0, 1))
+	result.append(Vector2i(1, 1))
+	return result

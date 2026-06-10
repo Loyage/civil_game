@@ -8,7 +8,9 @@
 
 - `MapLoader` 只负责读取生成配置、调用生成器、触发调试输出。
 - `MapGenerator` 只负责把 `MapGenerationConfig` 转换为 `MapState`。
-- `WorldSkeletonGenerator` 负责全局山脉、主河流等大尺度结构。
+- `WorldSkeletonGenerator` 负责世界骨架生成编排。
+- `WorldMountainGenerator`、`WorldOceanResolver`、`WorldRiverGenerator` 和 `WorldSkeletonTileIndexer` 分别负责山脉、海平面、河流和索引步骤。
+- `WorldGenerationMath` 负责骨架生成阶段共用的确定性 hash、全局高度采样、几何距离和方向工具。
 - `WorldFunctionSampler` 负责基于全局坐标采样高度、温度、湿度、河流强度和 biome。
 - `BigMapSummaryGenerator` 负责把连续世界函数汇总为大地图地块摘要。
 - 生成器不依赖 Godot 场景节点、`TileMapLayer`、overlay 或 UI。
@@ -46,6 +48,11 @@ game/scripts/map_generation/map_generation_debug_writer.gd
 game/scripts/map_generation/map_generation_values.gd
 game/scripts/world_generation/world_skeleton.gd
 game/scripts/world_generation/world_skeleton_generator.gd
+game/scripts/world_generation/world_mountain_generator.gd
+game/scripts/world_generation/world_ocean_resolver.gd
+game/scripts/world_generation/world_river_generator.gd
+game/scripts/world_generation/world_skeleton_tile_indexer.gd
+game/scripts/world_generation/world_generation_math.gd
 game/scripts/world_generation/world_function_sampler.gd
 game/scripts/world_generation/big_map_summary_generator.gd
 game/scripts/world_generation/sub_map_generator.gd
@@ -59,7 +66,13 @@ game/scripts/dev/map_generator_preview.gd
 - `map_generator.gd`：主生成器入口，提供 `generate(config) -> MapState`，委托 `world_generation` 分层执行实际生成。
 - `map_generation_debug_writer.gd`：把生成结果写入 `user://generated_map.json` 等调试输出。
 - `map_generation_values.gd`：中间数据结构，承载环境场与派生字段，避免生成流程继续依赖裸 `Dictionary`。
-- `world_generation/*.gd`：新世界生成分层，使用全局坐标连续采样，服务大地图摘要和后续小地图懒加载。
+- `world_skeleton_generator.gd`：骨架生成编排器，只保留步骤调用顺序。
+- `world_mountain_generator.gd`：山脉骨架生成步骤。
+- `world_ocean_resolver.gd`：海洋/海平面解析步骤。
+- `world_river_generator.gd`：河流源头、路径、汇流和湖泊生成步骤。
+- `world_skeleton_tile_indexer.gd`：山脉和河流到大地图地块的索引步骤。
+- `world_generation_math.gd`：骨架生成共用工具。
+- `world_function_sampler.gd`：连续函数采样，服务大地图摘要和后续小地图懒加载。
 - `MapGeneratorPreview.tscn`：开发期地图生成预览场景，用于输入 seed 和参数后直观看到生成结果。
 - `map_generator_preview.gd`：预览场景脚本，只调用正式 `MapGenerator.generate(config)`，不实现独立生成逻辑。
 
@@ -109,7 +122,17 @@ MapRoot
 
 ### 阶段 2：世界骨架生成
 
-`WorldSkeletonGenerator` 生成只描述大尺度结构的骨架数据：
+`WorldSkeletonGenerator` 只负责生成顺序编排，实际步骤拆分为：
+
+```text
+WorldSkeletonGenerator.generate(config)
+  -> WorldMountainGenerator.generate(config, skeleton)
+  -> WorldOceanResolver.resolve_sea_level(config, skeleton)
+  -> WorldRiverGenerator.generate(config, skeleton)
+  -> WorldSkeletonTileIndexer.build(skeleton)
+```
+
+拆分后的骨架数据仍由 `WorldSkeleton` 承载：
 
 - `mountain_ridges`
 - `rivers`
@@ -126,6 +149,15 @@ MapRoot
 大地图河流显示必须只使用河流中心路径索引。山脉索引可以扩展到周围 8 个邻居，但河流不允许这样扩展；否则一个河流路径点会把周围多个地块都标成河流，形成并排箭头。`TileState.has_river` 只由 `skeleton.rivers_by_tile` 决定，`river_strength` 只保留为连续强度数据。
 
 河流不只停留在大地图路径。大地图路径保留为粗路径，负责预览、摘要和索引；小地图第一次进入时根据粗路径进行地格级细化。细化后的河流会保存沿线切割点、宽度和深度，使河流能通过切割低成本地形继续前进，更容易入海。
+
+### 阶段 2.1：骨架生成源码定位
+
+- `game/scripts/world_generation/world_skeleton_generator.gd`：入口和步骤顺序。
+- `game/scripts/world_generation/world_mountain_generator.gd`：山脉折线生成。
+- `game/scripts/world_generation/world_ocean_resolver.gd`：按 `ocean_ratio` 解析海平面。
+- `game/scripts/world_generation/world_river_generator.gd`：河流源头选择、入海寻路、汇流和湖泊记录。
+- `game/scripts/world_generation/world_skeleton_tile_indexer.gd`：山脉/河流索引。
+- `game/scripts/world_generation/world_generation_math.gd`：hash、高度、距离、方向等共用函数。
 
 ### 阶段 3：阶段化图层快照
 
@@ -360,7 +392,12 @@ MapGeneratorPreview
 
 ### M10 - 连续世界生成改造
 
-- 使用 `WorldSkeletonGenerator` 生成全局山脉折线、河流下坡路径和湖泊。
+- 使用 `WorldSkeletonGenerator` 编排世界骨架生成。
+- 使用 `WorldMountainGenerator` 生成全局山脉折线。
+- 使用 `WorldOceanResolver` 在山脉生成之后解析海平面。
+- 使用 `WorldRiverGenerator` 生成河流源头、下坡路径、汇流和湖泊。
+- 使用 `WorldSkeletonTileIndexer` 建立山脉/河流地块索引。
+- 使用 `WorldGenerationMath` 复用骨架生成阶段的 hash、高度采样、距离和方向工具。
 - 使用 `WorldFunctionSampler` 按全局坐标采样连续高度、温度、湿度、河流强度和 biome。
 - 使用 `BigMapSummaryGenerator` 将小地图地格采样汇总为大地图地块摘要。
 - 大地图高度语义改为 `-256..256` 整数，`TileState.elevation` 表示内部高度平均值。
@@ -444,6 +481,12 @@ MapGeneratorPreview
 - [x] 创建 `world_generation` 目录
 - [x] 实现 `WorldSkeleton` 数据结构
 - [x] 实现 `WorldSkeletonGenerator`
+- [x] 将 `WorldSkeletonGenerator` 拆为步骤编排器
+- [x] 实现 `WorldMountainGenerator`
+- [x] 实现 `WorldOceanResolver`
+- [x] 实现 `WorldRiverGenerator`
+- [x] 实现 `WorldSkeletonTileIndexer`
+- [x] 实现 `WorldGenerationMath` 共用工具
 - [x] 实现 `WorldFunctionSampler`
 - [x] 实现 `BigMapSummaryGenerator`
 - [x] 新增 `SubMapGenerator` 接口占位
@@ -464,3 +507,4 @@ MapGeneratorPreview
 - 渲染辅助路径虽然服务于 overlay，但仍依赖地图生成数据；迁移时需要避免把 overlay 绘制逻辑带入生成器。
 - 调试输出如果继续和生成器耦合，会影响后续测试和缓存策略。
 - 预览工具如果复制生成逻辑，会和正式游戏生成结果分叉；必须强制复用正式生成器入口。
+- 本次世界骨架生成拆分只移动代码边界，不应改变同 seed 输出；如果后续发现生成结果变化，优先检查 `WorldGenerationMath` 中 hash 和高度采样是否与拆分前一致。
