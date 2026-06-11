@@ -263,6 +263,10 @@ func _render_local_map() -> void:
 	_update_selection_marker()
 
 func _local_cell_color(index: int) -> Color:
+	var view_id = view_mode_button.get_selected_id()
+	if view_id == VIEW_ELEVATION:
+		return _height_color(local_map_state.heights[index])
+
 	if local_map_state.river_flags[index] == 1:
 		return Color("#2fb8ff")
 	if local_map_state.water_flags[index] == 1:
@@ -684,7 +688,7 @@ func _show_selected_tile_local_map() -> void:
 	preview_mode = MODE_LOCAL
 	selected_cell = Vector2i(-1, -1)
 	local_map_button.text = "返回大地图"
-	view_mode_button.disabled = true
+	view_mode_button.disabled = false
 	direction_overlay_toggle.disabled = true
 	_render_local_map()
 	_update_summary_for_local_map(tile)

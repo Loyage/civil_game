@@ -127,6 +127,7 @@ game/scenes/dev/MapGeneratorPreview.tscn
   - 在同一预览场景内切换大地图/小地图。
   - 小地图不走缓存，直接用当前 seed 和选中 tile 生成。
   - 小地图支持右键拖动、Ctrl + 滚轮缩放和左键选择地格。
+  - 小地图复用 `View` 下拉框；当前已支持“海拔”视图，按 `-256..256` 高度渐变显示地格。
   - 左侧面板显示 tile key、平均高度和选中地格信息。
 
 预览视口交互由 `PreviewViewport.gui_input` 处理。预览场景整体是 UI Control 结构，不能依赖 `_unhandled_input`，否则鼠标事件可能先被 GUI 控件消费，导致右键拖动或左键选择不触发。
