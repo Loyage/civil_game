@@ -23,6 +23,26 @@ func generate(config, skeleton, stage_id: String = PipelineResultScript.STAGE_FI
 			map_state.add_tile(tile)
 	return map_state
 
+func generate_async(owner: Node, config, skeleton, stage_id: String, progress_callback: Callable, cancel_callback: Callable):
+	var map_state = MapStateScript.new(config.big_map_size, config.big_map_size)
+	map_state.world_seed = config.seed
+	map_state.start_city_name = config.start_city_name
+	var sampler = WorldFunctionSamplerScript.new(skeleton)
+	for row in range(config.big_map_size):
+		if cancel_callback.is_valid() and bool(cancel_callback.call()):
+			return null
+		for col in range(config.big_map_size):
+			var tile = _generate_tile_summary(config, skeleton, sampler, col, row, stage_id)
+			tile.is_city_center = col == config.start_city_col and row == config.start_city_row
+			if tile.is_city_center:
+				tile.owner_city_id = "player_capital"
+				map_state.start_city_tile_key = tile.tile_key
+			map_state.add_tile(tile)
+		if progress_callback.is_valid():
+			progress_callback.call(row + 1, config.big_map_size)
+		await owner.get_tree().process_frame
+	return map_state
+
 func _generate_tile_summary(config, skeleton, sampler, col: int, row: int, stage_id: String):
 	var offset = OffsetCoordScript.new(col, row)
 	var tile = TileStateScript.new(GridLayoutScript.tile_key(col, row), offset)
@@ -54,14 +74,14 @@ func _generate_tile_summary(config, skeleton, sampler, col: int, row: int, stage
 	tile.temperature = temp_total / float(total)
 	tile.moisture = moisture_total / float(total)
 	tile.river_strength = river_total / float(total)
-	tile.has_river = stage_id in [PipelineResultScript.STAGE_RIVERS, PipelineResultScript.STAGE_FINAL] and skeleton.rivers_by_tile.has(tile.tile_key)
+	tile.has_river = _stage_includes_rivers(stage_id) and skeleton.rivers_by_tile.has(tile.tile_key)
 	tile.biome = _dominant_biome(biome_counts)
 	tile.terrain_tags = _terrain_tags(tile)
-	if stage_id in [PipelineResultScript.STAGE_MOUNTAINS, PipelineResultScript.STAGE_FINAL]:
+	if _stage_includes_mountains(stage_id):
 		_apply_mountain_summary(skeleton, tile)
-	if stage_id in [PipelineResultScript.STAGE_RIVERS, PipelineResultScript.STAGE_FINAL]:
+	if _stage_includes_rivers(stage_id):
 		_apply_river_summary(skeleton, tile)
-	if stage_id == PipelineResultScript.STAGE_FINAL:
+	if _stage_includes_rivers(stage_id):
 		_apply_lake_summary(skeleton, tile)
 	return tile
 
@@ -69,12 +89,8 @@ func _sample_stage_height(sampler, world_x: int, world_y: int, stage_id: String)
 	match stage_id:
 		PipelineResultScript.STAGE_BASE:
 			return sampler.sample_base_height(world_x, world_y)
-		PipelineResultScript.STAGE_OCEAN:
-			return sampler.sample_ocean_height(world_x, world_y)
 		PipelineResultScript.STAGE_MOUNTAINS:
-			return sampler.sample_mountain_delta(world_x, world_y)
-		PipelineResultScript.STAGE_RIVERS:
-			return 0
+			return sampler.sample_height_after_mountains(world_x, world_y)
 		_:
 			return sampler.sample_final_height(world_x, world_y)
 
@@ -82,16 +98,29 @@ func _sample_stage_biome(skeleton, sampler, world_x: int, world_y: int, stage_id
 	match stage_id:
 		PipelineResultScript.STAGE_BASE:
 			return "plain"
-		PipelineResultScript.STAGE_OCEAN:
-			return "ocean" if sampler.sample_base_height(world_x, world_y) < skeleton.sea_level else "plain"
 		PipelineResultScript.STAGE_MOUNTAINS:
-			return "mountain" if sampler.sample_mountain_influence(world_x, world_y) > 0.12 else "plain"
+			return _terrain_biome_from_height(sampler.sample_height_after_mountains(world_x, world_y), skeleton.sea_level, false)
+		PipelineResultScript.STAGE_OCEAN:
+			return _terrain_biome_from_height(sampler.sample_final_height(world_x, world_y), skeleton.sea_level, true)
 		PipelineResultScript.STAGE_RIVERS:
-			return "river" if sampler.sample_river_strength(world_x, world_y) > 0.08 else "plain"
+			if sampler.sample_river_strength(world_x, world_y) > 0.08:
+				return "river"
+			return _terrain_biome_from_height(sampler.sample_final_height(world_x, world_y), skeleton.sea_level, true)
 		PipelineResultScript.STAGE_ENVIRONMENT:
-			return "forest" if sampler.sample_moisture(world_x, world_y) > 0.55 else "plain"
+			return sampler.sample_biome(world_x, world_y)
 		_:
 			return sampler.sample_biome(world_x, world_y)
+
+func _terrain_biome_from_height(height: int, sea_level: int, include_ocean: bool) -> String:
+	if include_ocean and height < sea_level:
+		return "ocean"
+	if height > 210:
+		return "snow_mountain"
+	if height > 150:
+		return "mountain"
+	if height > 86:
+		return "hill"
+	return "plain"
 
 func _apply_river_summary(skeleton, tile) -> void:
 	var ids: Array = skeleton.rivers_by_tile.get(tile.tile_key, [])
@@ -101,6 +130,8 @@ func _apply_river_summary(skeleton, tile) -> void:
 	tile.has_river = true
 	tile.river_flow = _polyline_direction_for_tile(river["points"], tile.offset.col, tile.offset.row, skeleton.sub_map_size)
 	tile.river_path_points = _normalized_polyline_points(river["points"], tile.offset.col, tile.offset.row, skeleton.sub_map_size)
+	if not tile.terrain_tags.has("river"):
+		tile.terrain_tags.append("river")
 
 func _apply_mountain_summary(skeleton, tile) -> void:
 	var ids: Array = skeleton.mountains_by_tile.get(tile.tile_key, [])
@@ -118,6 +149,22 @@ func _apply_lake_summary(skeleton, tile) -> void:
 		tile.terrain_tags.append("lake")
 	if not tile.terrain_tags.has("water"):
 		tile.terrain_tags.append("water")
+
+func _stage_includes_mountains(stage_id: String) -> bool:
+	return stage_id in [
+		PipelineResultScript.STAGE_MOUNTAINS,
+		PipelineResultScript.STAGE_OCEAN,
+		PipelineResultScript.STAGE_RIVERS,
+		PipelineResultScript.STAGE_ENVIRONMENT,
+		PipelineResultScript.STAGE_FINAL
+	]
+
+func _stage_includes_rivers(stage_id: String) -> bool:
+	return stage_id in [
+		PipelineResultScript.STAGE_RIVERS,
+		PipelineResultScript.STAGE_ENVIRONMENT,
+		PipelineResultScript.STAGE_FINAL
+	]
 
 func _normalized_polyline_points(points: Array, tile_x: int, tile_y: int, sub_map_size: int) -> PackedVector2Array:
 	var result := PackedVector2Array()

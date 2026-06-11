@@ -2,7 +2,7 @@ class_name MapGeneratorPreview
 extends Control
 
 const MapGenerationConfigScript := preload("res://game/scripts/map_generation/map_generation_config.gd")
-const MapGeneratorScript := preload("res://game/scripts/map_generation/map_generator.gd")
+const PreviewTaskScript := preload("res://game/scripts/map_generation/map_generation_preview_task.gd")
 const PipelineResultScript := preload("res://game/scripts/map_generation/map_generation_pipeline_result.gd")
 const LocalMapGeneratorScript := preload("res://game/scripts/local_map/local_map_generator.gd")
 
@@ -52,12 +52,15 @@ const TERRAIN_COLORS := {
 @onready var stage_button: OptionButton = %StageButton
 @onready var direction_overlay_toggle: CheckButton = %DirectionOverlayToggle
 @onready var generate_button: Button = %GenerateButton
+@onready var cancel_generation_button: Button = %CancelGenerationButton
 @onready var random_seed_button: Button = %RandomSeedButton
 @onready var local_map_button: Button = %LocalMapButton
 @onready var preview_viewport: Control = %PreviewViewport
 @onready var map_texture: TextureRect = %MapTexture
 @onready var direction_overlay_texture: TextureRect = %DirectionOverlayTexture
 @onready var selection_marker: ColorRect = %SelectionMarker
+@onready var progress_overlay: ColorRect = %ProgressOverlay
+@onready var progress_label: Label = %ProgressLabel
 @onready var summary_label: Label = %SummaryLabel
 @onready var tile_info_label: Label = %TileInfoLabel
 
@@ -72,11 +75,14 @@ var pan_offset := Vector2.ZERO
 var is_panning := false
 var selected_tile := Vector2i(-1, -1)
 var selected_cell := Vector2i(-1, -1)
+var generation_task
+var is_generating := false
 
 func _ready() -> void:
 	_setup_view_modes()
 	_setup_stage_modes()
 	generate_button.pressed.connect(_generate_preview)
+	cancel_generation_button.pressed.connect(_cancel_generation)
 	random_seed_button.pressed.connect(_randomize_seed)
 	local_map_button.pressed.connect(_toggle_local_map)
 	view_mode_button.item_selected.connect(func(_index: int) -> void: _render_preview())
@@ -117,8 +123,22 @@ func _setup_stage_modes() -> void:
 	stage_button.select(PipelineResultScript.STAGE_ORDER.find(PipelineResultScript.STAGE_FINAL))
 
 func _generate_preview() -> void:
+	if is_generating:
+		return
 	var config = _build_config_from_inputs()
-	pipeline_result = MapGeneratorScript.new().generate_pipeline(config)
+	generation_task = PreviewTaskScript.new()
+	generation_task.progress_changed.connect(_on_generation_progress)
+	_set_generation_busy(true)
+	var generated_result = await generation_task.run(self, config)
+	if generation_task == null:
+		return
+	if generated_result == null:
+		_set_generation_busy(false)
+		generation_task = null
+		_show_generation_cancelled()
+		return
+
+	pipeline_result = generated_result
 	current_stage_id = _selected_stage_id()
 	map_state = pipeline_result.get_stage(current_stage_id)
 	local_map_state = null
@@ -133,9 +153,35 @@ func _generate_preview() -> void:
 	_update_summary(config)
 	_show_empty_tile_info()
 	_reset_view_deferred()
+	_set_generation_busy(false)
+	generation_task = null
 
 func _randomize_seed() -> void:
+	if is_generating:
+		return
 	seed_input.value = randi_range(1, 999999999)
+
+func _cancel_generation() -> void:
+	if generation_task == null:
+		return
+	generation_task.cancel()
+
+func _on_generation_progress(message: String, current: int, total: int) -> void:
+	var percent := int(round(float(current) / maxf(1.0, float(total)) * 100.0))
+	progress_label.text = "%s\n%d%% (%d/%d)" % [message, percent, current, total]
+
+func _set_generation_busy(enabled: bool) -> void:
+	is_generating = enabled
+	generate_button.disabled = enabled
+	random_seed_button.disabled = enabled
+	cancel_generation_button.visible = enabled
+	cancel_generation_button.disabled = not enabled
+	progress_overlay.visible = enabled
+	if enabled:
+		progress_label.text = "准备生成地图\n0%"
+
+func _show_generation_cancelled() -> void:
+	summary_label.text = "地图生成已取消。"
 
 func _show_initial_empty_preview() -> void:
 	map_state = null
@@ -198,18 +244,6 @@ func _stage_tile_color(tile, view_id: int) -> Color:
 	match current_stage_id:
 		PipelineResultScript.STAGE_BASE:
 			return _height_color(tile.elevation)
-		PipelineResultScript.STAGE_OCEAN:
-			if tile.biome == "ocean":
-				return Color("#1d4f78")
-			return Color("#202020")
-		PipelineResultScript.STAGE_MOUNTAINS:
-			return _gradient_color(clampf(float(tile.elevation) / 150.0, 0.0, 1.0), Color("#111111"), Color("#eeeeee"))
-		PipelineResultScript.STAGE_RIVERS:
-			if tile.has_river:
-				return Color("#34c6ff")
-			return Color("#000000")
-		PipelineResultScript.STAGE_ENVIRONMENT:
-			return _gradient_color(tile.moisture, Color("#5b4b30"), Color("#2f78c4"))
 		_:
 			return _tile_color(tile, view_id)
 
@@ -437,7 +471,11 @@ func _update_direction_overlay_visibility() -> void:
 		return
 	var selected_view_id := view_mode_button.get_selected_id()
 	var force_visible := selected_view_id in [VIEW_RIVER, VIEW_DIRECTIONS]
-	var supports_overlay := current_stage_id in [PipelineResultScript.STAGE_RIVERS, PipelineResultScript.STAGE_FINAL]
+	var supports_overlay := current_stage_id in [
+		PipelineResultScript.STAGE_RIVERS,
+		PipelineResultScript.STAGE_ENVIRONMENT,
+		PipelineResultScript.STAGE_FINAL
+	]
 	direction_overlay_texture.visible = (
 		preview_mode == MODE_WORLD
 		and map_state != null

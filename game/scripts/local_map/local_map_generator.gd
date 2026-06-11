@@ -12,6 +12,8 @@ const MIN_HEIGHT := -256
 const MAX_HEIGHT := 256
 const RIVER_START_WIDTH := 3.0
 const RIVER_MAX_WIDTH := 12.0
+const RIVER_DISTANCE_WIDTH_GROWTH := 0.42
+const RIVER_STRENGTH_WIDTH_GROWTH := 0.24
 const RIVER_MIN_DEPTH := 10.0
 const RIVER_MAX_DEPTH := 42.0
 
@@ -372,8 +374,8 @@ func _straight_path(start: Vector2i, goal: Vector2i) -> Array[Vector2i]:
 
 func _river_width_at(tile, index: int, path_size: int) -> float:
 	var distance_growth: float = float(index) / maxf(1.0, float(path_size - 1))
-	var strength_growth: float = clampf(float(tile.river_strength) * 1.5, 0.0, 0.35)
-	return lerpf(RIVER_START_WIDTH, RIVER_MAX_WIDTH, clampf(distance_growth * 0.75 + strength_growth, 0.0, 1.0))
+	var strength_growth: float = clampf(float(tile.river_strength) * 1.0, 0.0, RIVER_STRENGTH_WIDTH_GROWTH)
+	return lerpf(RIVER_START_WIDTH, RIVER_MAX_WIDTH, clampf(distance_growth * RIVER_DISTANCE_WIDTH_GROWTH + strength_growth, 0.0, 1.0))
 
 func _river_depth_at(width: float, index: int, path_size: int) -> float:
 	var distance_growth: float = float(index) / maxf(1.0, float(path_size - 1))

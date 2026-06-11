@@ -159,6 +159,12 @@ unique_name_in_owner = true
 layout_mode = 2
 text = "生成地图"
 
+[node name="CancelGenerationButton" type="Button" parent="Root/Controls/Margin/Column"]
+unique_name_in_owner = true
+visible = false
+layout_mode = 2
+text = "取消生成"
+
 [node name="RandomSeedButton" type="Button" parent="Root/Controls/Margin/Column"]
 unique_name_in_owner = true
 layout_mode = 2
@@ -219,3 +225,42 @@ unique_name_in_owner = true
 visible = false
 mouse_filter = 2
 color = Color(1, 0.9, 0.1, 0.8)
+
+[node name="ProgressOverlay" type="ColorRect" parent="Root/PreviewPanel/PreviewMargin/PreviewViewport"]
+unique_name_in_owner = true
+visible = false
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 0
+color = Color(0.04, 0.05, 0.05, 0.68)
+
+[node name="ProgressPanel" type="PanelContainer" parent="Root/PreviewPanel/PreviewMargin/PreviewViewport/ProgressOverlay"]
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -170.0
+offset_top = -42.0
+offset_right = 170.0
+offset_bottom = 42.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="ProgressMargin" type="MarginContainer" parent="Root/PreviewPanel/PreviewMargin/PreviewViewport/ProgressOverlay/ProgressPanel"]
+layout_mode = 2
+theme_override_constants/margin_left = 18
+theme_override_constants/margin_top = 14
+theme_override_constants/margin_right = 18
+theme_override_constants/margin_bottom = 14
+
+[node name="ProgressLabel" type="Label" parent="Root/PreviewPanel/PreviewMargin/PreviewViewport/ProgressOverlay/ProgressPanel/ProgressMargin"]
+unique_name_in_owner = true
+layout_mode = 2
+horizontal_alignment = 1
+vertical_alignment = 1
+autowrap_mode = 3
+text = "准备生成地图"

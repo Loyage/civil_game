@@ -5,6 +5,8 @@ const WorldGenerationMathScript := preload("res://game/scripts/world_generation/
 
 const RIVER_START_WIDTH := 3.0
 const RIVER_MAX_WIDTH := 12.0
+const RIVER_DISTANCE_WIDTH_GROWTH := 0.42
+const RIVER_MERGE_WIDTH_GROWTH := 0.16
 const RIVER_SOURCE_MIN_DISTANCE_TILES := 4.0
 const RIVER_MAX_UPHILL_STEP := 72
 
@@ -19,6 +21,29 @@ func generate(config, skeleton) -> void:
 		river["id"] = skeleton.rivers.size()
 		skeleton.river_sources.append(source_tile)
 		skeleton.rivers.append(river)
+
+func generate_async(owner: Node, config, skeleton, progress_callback: Callable, cancel_callback: Callable) -> bool:
+	var total: int = max(1, int(config.river_source_count))
+	if config.river_source_count <= 0:
+		if progress_callback.is_valid():
+			progress_callback.call(1, total)
+		await owner.get_tree().process_frame
+		return cancel_callback.is_valid() and bool(cancel_callback.call())
+
+	for id in range(config.river_source_count):
+		if cancel_callback.is_valid() and bool(cancel_callback.call()):
+			return true
+		var source_tile: Vector2i = _pick_river_source_tile(config, skeleton, id)
+		if source_tile != Vector2i(-1, -1):
+			var river: Dictionary = _trace_river(config, skeleton, id, source_tile)
+			if river["points"].size() >= 2:
+				river["id"] = skeleton.rivers.size()
+				skeleton.river_sources.append(source_tile)
+				skeleton.rivers.append(river)
+		if progress_callback.is_valid():
+			progress_callback.call(id + 1, total)
+		await owner.get_tree().process_frame
+	return cancel_callback.is_valid() and bool(cancel_callback.call())
 
 func _pick_river_source_tile(config, skeleton, river_id: int) -> Vector2i:
 	var best: Vector2i = Vector2i(-1, -1)
@@ -178,8 +203,8 @@ func _river_width_profile(tile_count: int, has_merge: bool) -> Array[float]:
 	var growth_denominator: float = max(1.0, float(tile_count - 1))
 	for index in range(tile_count):
 		var distance_growth: float = float(index) / growth_denominator
-		var merge_growth: float = 0.22 if has_merge else 0.0
-		result.append(lerpf(RIVER_START_WIDTH, RIVER_MAX_WIDTH, clampf(distance_growth * 0.78 + merge_growth, 0.0, 1.0)))
+		var merge_growth: float = RIVER_MERGE_WIDTH_GROWTH if has_merge else 0.0
+		result.append(lerpf(RIVER_START_WIDTH, RIVER_MAX_WIDTH, clampf(distance_growth * RIVER_DISTANCE_WIDTH_GROWTH + merge_growth, 0.0, 1.0)))
 	return result
 
 func _tiles_to_points(config, tiles: Array[Vector2i]) -> Array[Vector2]:
