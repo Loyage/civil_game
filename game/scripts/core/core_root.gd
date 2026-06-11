@@ -13,13 +13,17 @@ var selected_tile
 func _ready() -> void:
 	map_root.tile_selected.connect(_on_map_tile_selected)
 	map_root.tile_enter_requested.connect(_on_map_tile_enter_requested)
+	ui_root.new_game_config_confirmed.connect(_on_new_game_config_confirmed)
 	ui_root.debug_symbols_toggle_requested.connect(_on_debug_symbols_toggle_requested)
 	ui_root.return_to_world_requested.connect(_on_return_to_world_requested)
 	local_map_root.return_to_world_requested.connect(_on_return_to_world_requested)
 	local_map_root.local_cell_selected.connect(_on_local_cell_selected)
+	ui_root.show_main_menu()
+
+func _on_new_game_config_confirmed(config) -> void:
+	map_root.start_new_game(config)
 	local_map_service = LocalMapServiceScript.new(_world_seed())
 	ui_root.show_initial_state()
-
 	var start_tile = map_root.map_state.get_tile(map_root.map_state.start_city_tile_key)
 	if start_tile != null:
 		selected_tile = start_tile

@@ -39,16 +39,28 @@ var input_controller
 var show_debug_symbols := true
 
 func _ready() -> void:
-	map_state = MapLoaderScript.new().load_generated_map()
+	visible = false
+	process_mode = Node.PROCESS_MODE_DISABLED
+
+func start_new_game(config = null) -> void:
+	if config == null:
+		map_state = MapLoaderScript.new().load_generated_map()
+	else:
+		map_state = MapLoaderScript.new().load_generated_map_with_config(config)
+	_apply_auto_start_city()
 	query_service = MapQueryServiceScript.new(map_state)
 	input_controller = MapInputControllerScript.new(map_state, terrain_layer, map_camera)
 	_setup_tile_set()
 	_render_terrain()
 	_setup_overlays()
 	_setup_camera()
+	visible = true
+	process_mode = Node.PROCESS_MODE_INHERIT
 	_emit_initial_selection()
 
 func _unhandled_input(event: InputEvent) -> void:
+	if input_controller == null:
+		return
 	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and event.pressed:
 		var tile = input_controller.tile_from_screen_position(event.position)
 		if tile != null:
@@ -57,6 +69,8 @@ func _unhandled_input(event: InputEvent) -> void:
 				tile_enter_requested.emit(tile)
 
 func _process(_delta: float) -> void:
+	if map_state == null:
+		return
 	feature_overlay.queue_redraw()
 	river_overlay.queue_redraw()
 
@@ -152,3 +166,41 @@ func _emit_initial_selection() -> void:
 	var tile = map_state.get_tile(map_state.start_city_tile_key)
 	if tile != null:
 		tile_selected.emit(tile)
+
+func _apply_auto_start_city() -> void:
+	if map_state == null:
+		return
+	var tile = _find_start_city_tile()
+	if tile == null:
+		return
+	for existing_tile in map_state.tiles_by_key.values():
+		existing_tile.is_city_center = false
+		existing_tile.owner_city_id = ""
+	tile.is_city_center = true
+	tile.owner_city_id = "player_capital"
+	map_state.start_city_tile_key = tile.tile_key
+	map_state.start_city_name = "Capital"
+
+func _find_start_city_tile():
+	var center := Vector2((float(map_state.width) - 1.0) * 0.5, (float(map_state.height) - 1.0) * 0.5)
+	var best_tile = null
+	var best_score := INF
+	for tile in map_state.tiles_by_key.values():
+		if tile.biome == "ocean" or tile.is_mountain():
+			continue
+		var distance := Vector2(float(tile.offset.col), float(tile.offset.row)).distance_squared_to(center)
+		var score := distance
+		if tile.has_river:
+			score -= 8.0
+		if tile.has_feature("forest"):
+			score -= 3.0
+		if tile.is_hill():
+			score += 6.0
+		if tile.elevation < 0:
+			score += 20.0
+		if score < best_score:
+			best_score = score
+			best_tile = tile
+	if best_tile != null:
+		return best_tile
+	return map_state.get_tile_by_offset(int(map_state.width / 2), int(map_state.height / 2))

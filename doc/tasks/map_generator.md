@@ -44,6 +44,7 @@
 ```text
 game/scripts/map_generation/map_generation_config.gd
 game/scripts/map_generation/map_generator.gd
+game/scripts/map_generation/map_generation_preview_task.gd
 game/scripts/map_generation/map_generation_debug_writer.gd
 game/scripts/map_generation/map_generation_values.gd
 game/scripts/world_generation/world_skeleton.gd
@@ -64,6 +65,7 @@ game/scripts/dev/map_generator_preview.gd
 
 - `map_generation_config.gd`：强类型配置对象，承载 width、height、seed、thresholds、generation 参数和 start_city。
 - `map_generator.gd`：主生成器入口，提供 `generate(config) -> MapState`，委托 `world_generation` 分层执行实际生成。
+- `map_generation_preview_task.gd`：预览工具专用分帧生成任务，负责进度信号和取消检查。
 - `map_generation_debug_writer.gd`：把生成结果写入 `user://generated_map.json` 等调试输出。
 - `map_generation_values.gd`：中间数据结构，承载环境场与派生字段，避免生成流程继续依赖裸 `Dictionary`。
 - `world_skeleton_generator.gd`：骨架生成编排器，只保留步骤调用顺序。
@@ -144,7 +146,7 @@ WorldSkeletonGenerator.generate(config)
 
 骨架不保存每个小地图地格的完整地形，只保存能影响连续函数采样的大尺度结构。
 
-河流从山脉影响范围内的高海拔陆地源头出发。河流源头之间存在排他性，新源头必须与已有源头保持至少 `4` 个大地图地块的直线距离；候选不足时放弃该河流，不放宽距离；湖泊溢出源头也受同样限制。确定源头后，河流按大地图 8 邻域执行成本寻路，优先寻找入海路径。成本包含移动距离、上坡切割、高地、山脉、下坡奖励和入海奖励；允许切开短距离局部高地，单步上坡超过 `72` 高度且不是海洋时视为不可通行。到达海洋后停止；进入已有河流宽度范围后停止并视为汇流；找不到可行入海路径时记录湖泊。河流宽度单位为全局地格，默认从 `3` 随距离和汇流增长到最大 `12`。
+河流从山脉影响范围内的高海拔陆地源头出发。河流源头之间存在排他性，新源头必须与已有源头保持至少 `4` 个大地图地块的直线距离；候选不足时放弃该河流，不放宽距离；湖泊溢出源头也受同样限制。确定源头后，河流按大地图 8 邻域执行成本寻路，优先寻找入海路径。成本包含移动距离、上坡切割、高地、山脉、下坡奖励和入海奖励；允许切开短距离局部高地，单步上坡超过 `72` 高度且不是海洋时视为不可通行。到达海洋后停止；进入已有河流宽度范围后停止并视为汇流；找不到可行入海路径时记录湖泊。河流宽度单位为全局地格，默认从 `3` 随距离和汇流低速增长到最大 `12`；当前距离增长系数为 `0.42`，汇流增宽系数为 `0.16`。
 
 大地图河流显示必须只使用河流中心路径索引。山脉索引可以扩展到周围 8 个邻居，但河流不允许这样扩展；否则一个河流路径点会把周围多个地块都标成河流，形成并排箭头。`TileState.has_river` 只由 `skeleton.rivers_by_tile` 决定，`river_strength` 只保留为连续强度数据。
 
@@ -159,7 +161,7 @@ WorldSkeletonGenerator.generate(config)
 - `game/scripts/world_generation/world_skeleton_tile_indexer.gd`：山脉/河流索引。
 - `game/scripts/world_generation/world_generation_math.gd`：hash、高度、距离、方向等共用函数。
 
-### 阶段 3：阶段化图层快照
+### 阶段 3：阶段化累计快照
 
 新增 `MapGenerationPipelineResult`：
 
@@ -167,13 +169,13 @@ WorldSkeletonGenerator.generate(config)
 - `stage_maps`
 - `stage_labels`
 
-预览器点击“生成地图”时一次性生成以下阶段：
+预览器点击“生成地图”时一次性生成以下阶段。每个阶段表示“地图生成到这一步之后的整体样貌”，不是单独图层：
 
 - 基础地形
-- 山脉
-- 海洋
-- 河流
-- 环境
+- 山脉：基础地形 + 山脉
+- 海洋：基础地形 + 山脉 + 海洋
+- 河流：基础地形 + 山脉 + 海洋 + 河流
+- 环境：基础地形 + 山脉 + 海洋 + 河流 + 环境
 - 最终地貌
 
 正式游戏继续调用 `MapGenerator.generate(config)`，只取得最终 `MapState`。
@@ -255,8 +257,13 @@ game/scripts/dev/map_generator_preview.gd
 - 输入 `river_source_count`。
 - 打开预览工具时不自动生成地图。
 - 点击“生成地图”后显示完整世界地图。
-- 点击“生成地图”后一次性生成所有阶段快照。
-- 支持通过 `Stage` 下拉框切换基础地形、山脉、海洋、河流、环境和最终地貌。
+- 点击“生成地图”后一次性生成所有阶段累计快照。
+- 点击“生成地图”后在地图显示区域叠加进度层，保留旧地图。
+- 生成期间显示骨架步骤和阶段摘要逐行进度。
+- 河流骨架按河流源头逐个生成并刷新进度。
+- 生成期间禁用“生成地图”和“随机 Seed”。
+- 生成期间显示“取消生成”按钮，取消后保留旧地图，不写入部分结果。
+- 支持通过 `Stage` 下拉框切换基础地形、山脉、海洋、河流、环境和最终地貌；选中阶段显示生成到该步骤为止的整体样貌。
 - 支持随机 seed，但随机按钮只更新 seed 输入框，不立即生成地图。
 - 支持重新生成。
 - 显示当前 seed 和主要生成参数。
@@ -388,6 +395,7 @@ MapGeneratorPreview
 - 小地图预览不走缓存，每次直接使用当前 seed 和选中 tile 生成。
 - 小地图预览支持右键拖动、Ctrl + 滚轮缩放。
 - 小地图预览支持左键选择地格。
+- 小地图预览支持复用 `View` 下拉框；当前已接入“海拔”视图。
 - 左侧面板显示小地图 tile key、平均高度和选中地格信息。
 
 ### M10 - 连续世界生成改造
@@ -449,6 +457,13 @@ MapGeneratorPreview
 - [x] 实现按 `river_flow` 绘制河流地块内方向箭头
 - [x] 实现阶段化地图生成结果 `MapGenerationPipelineResult`
 - [x] 实现基础地形 / 山脉 / 海洋 / 河流 / 环境 / 最终地貌阶段快照
+- [x] 将阶段快照改为显示生成到该步骤为止的累计地图状态
+- [x] 实现预览工具分帧生成任务
+- [x] 实现地图显示区域进度覆盖层
+- [x] 实现生成期间禁用生成/随机 Seed 按钮
+- [x] 实现生成取消按钮
+- [x] 实现阶段摘要逐行进度显示
+- [x] 实现河流骨架按源头分帧生成进度
 - [x] 调整海洋生成到山脉生成之后
 - [x] 实现预览工具阶段下拉框
 - [x] 实现 `ocean_ratio` 预览参数
@@ -477,6 +492,7 @@ MapGeneratorPreview
 - [x] 小地图预览不走缓存直接生成
 - [x] 小地图预览支持右键拖动和 Ctrl + 滚轮缩放
 - [x] 小地图预览支持左键选择地格
+- [x] 小地图预览支持海拔视图
 - [x] 左侧面板显示小地图地格信息
 - [x] 创建 `world_generation` 目录
 - [x] 实现 `WorldSkeleton` 数据结构
