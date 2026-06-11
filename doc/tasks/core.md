@@ -83,12 +83,13 @@ var game_state: GameState
 ### 新游戏流程
 
 1. `GameRoot` 启动。
-2. `CoreBootstrap` 加载静态数据。
-3. `MapService` 读取固定地图并创建 `MapState`。
-4. `CityService` 根据预设创建初始城市。
-5. `TechService` 创建初始科技状态。
-6. `Core` 组装 `GameState`。
-7. `UI` 根据 `GameState` 首次渲染。
+2. `UIRoot` 先显示启动主菜单，地图层保持隐藏且不生成地图。
+3. 玩家点击“开始游戏”进入地图选择界面，调整地图参数；只有主动点击“生成预览”才生成最终地貌预览。
+4. 玩家点击“开始本局”后，`UIRoot` 将运行时 `MapGenerationConfig` 交给 `CoreRoot`。
+5. `CoreRoot` 调用 `MapRoot.start_new_game(config)` 生成 `MapState`。
+6. `MapRoot` 自动选择一个非海洋、非山脉且靠近地图中心的起始城市地块。
+7. `CoreRoot` 初始化 `LocalMapService`，并让 `UI` 根据起始地块首次渲染。
+8. 后续接入 `CityService`、`TechService` 后，再由 `Core` 组装完整 `GameState`。
 
 ### 结束回合流程
 
@@ -204,7 +205,7 @@ signal selected_city_changed(city_id: String)
 - [ ] 实现 `CoreBootstrap`
 - [ ] 实现 `TurnManager`
 - [ ] 定义并注册 `GameEvents` 信号
-- [ ] 实现新游戏初始化流程
+- [x] 实现新游戏初始化流程
 - [ ] 实现结束回合流程
 - [ ] 实现读档后世界重建流程
 - [ ] 为 `core` 补充基础调试日志

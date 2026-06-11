@@ -6,12 +6,16 @@
 
 首版目标：
 
+- 显示启动主菜单
+- 显示新游戏地图选择界面
+- 支持最终地貌预览
 - 显示基础 HUD
 - 显示结束回合按钮
 - 暂不显示城市信息面板
 - 暂不显示科技进度面板
 - 显示地块信息面板
 - 支持保存/读档入口
+- 支持地图参数保存/读取入口
 - 支持地图纹理/调试符号显示切换入口
 
 ## 职责边界
@@ -76,8 +80,11 @@ var completed_names: PackedStringArray
 
 1. `Main.tscn` 挂载 `core_root.gd`，作为当前临时上层调度节点。
 2. `MapRoot` 和 `UIRoot` 作为同级节点存在。
-3. `MapRoot` 暂时继续负责加载 `MapState`。
-4. `CoreRoot` 从 `MapRoot` 读取起始地块，并调用 `UIRoot.show_tile(tile)` 初始化 UI。
+3. `UIRoot` 先显示启动主菜单，HUD 和地块信息面板隐藏。
+4. 玩家进入地图选择界面后，可调整 `seed`、地图尺寸、小地图边长、海洋比例、山脉数量、河流源数量和大陆倾向。
+5. 玩家主动点击“生成预览”后，地图选择界面生成最终地貌预览，并自动标出建议起始地块。
+6. 玩家点击“开始本局”后，`CoreRoot` 调用 `MapRoot.start_new_game(config)`。
+7. `CoreRoot` 从 `MapRoot` 读取起始地块，并调用 `UIRoot.show_tile(tile)` 初始化 HUD。
 
 ### 结束回合流程
 
@@ -120,7 +127,7 @@ game/scripts/core/core_root.gd
 - `UIRoot.tscn`
   - 所有首版 UI 场景的容器
 - `ui_root.gd`
-  - 对外暴露 `show_tile(tile)`，转发 HUD 按钮信号
+  - 显示启动主菜单和地图选择界面，对外暴露 `show_tile(tile)`，转发 HUD 按钮信号
 - `HudBar.tscn`
   - 顶部横贯全屏 HUD，显示回合、金币、当前选中坐标、保存/读档/结束回合入口和 `Texture / Symbol` 按钮
 - `TileInfoPanel.tscn`
@@ -181,6 +188,9 @@ game/scripts/core/core_root.gd
 
 - [x] 创建 `UIRoot.tscn`
 - [x] 创建 `HudBar.tscn`
+- [x] 实现启动主菜单
+- [x] 实现新游戏地图参数选择界面
+- [x] 实现最终地貌预览
 - [ ] 创建 `CityPanel.tscn`
 - [ ] 创建 `TechPanel.tscn`
 - [x] 创建 `TileInfoPanel.tscn`
@@ -192,6 +202,7 @@ game/scripts/core/core_root.gd
 - [ ] 实现科技信息渲染
 - [x] 实现地块信息渲染
 - [x] 实现 HUD 中禁用的保存/读档入口
+- [x] 实现地图参数保存/读取入口
 - [ ] 在回合结算时禁用交互按钮
 - [x] 实现 `Texture / Symbol` 地图调试符号切换入口
 - [x] 实现 `CoreRoot` 调度 `MapRoot` 与 `UIRoot`

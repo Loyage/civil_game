@@ -10,6 +10,9 @@ func load_generated_map():
 	var raw_config := _read_json(CONFIG_PATH)
 	var config = MapGenerationConfigScript.new()
 	config.load_from_dictionary(raw_config)
+	return load_generated_map_with_config(config)
+
+func load_generated_map_with_config(config):
 	var map_state = MapGeneratorScript.new().generate(config)
 	MapGenerationDebugWriterScript.new().write_generated_map(config, map_state)
 	return map_state
