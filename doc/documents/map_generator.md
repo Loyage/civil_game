@@ -6,7 +6,12 @@
 
 - `MapGenerationConfig` 承载地图生成配置。
 - `MapGenerator.generate(config)` 根据配置生成 `MapState`，内部委托 `world_generation` 模块完成骨架生成和大地图摘要。
-- `WorldSkeletonGenerator` 生成全局山脉折线和河流下坡路径。
+- `WorldSkeletonGenerator` 只负责世界骨架生成编排，具体步骤拆到独立脚本。
+- `WorldMountainGenerator` 生成全局山脉折线。
+- `WorldOceanResolver` 根据山脉后高度和 `ocean_ratio` 求海平面。
+- `WorldRiverGenerator` 生成河流源头、下坡路径、汇流和湖泊。
+- `WorldSkeletonTileIndexer` 建立山脉/河流到大地图地块的索引。
+- `WorldGenerationMath` 提供骨架生成阶段共用的确定性 hash、全局高度采样、距离和方向工具。
 - `WorldFunctionSampler` 基于全局坐标 `worldX/worldY` 采样高度、温度、湿度、河流强度和 biome。
 - `BigMapSummaryGenerator` 对每个大地图地块按 `summary_sample_resolution` 采样内部地格，生成平均高度、最低/最高高度和主体 biome。
 - `SubMapGenerator` 先保留接口，不接入现有 `LocalMapGenerator`。
@@ -22,7 +27,12 @@
 | `game/scripts/map_generation/map_generator.gd` | 世界地图生成入口，调用 `WorldSkeletonGenerator` 和 `BigMapSummaryGenerator`。 |
 | `game/scripts/map_generation/map_generation_debug_writer.gd` | 调试输出写入器，负责写出 `user://generated_map.json`。 |
 | `game/scripts/world_generation/world_skeleton.gd` | 世界骨架数据，保存全局山脉、河流和按大地图地块建立的索引。 |
-| `game/scripts/world_generation/world_skeleton_generator.gd` | 根据 seed 和配置生成世界骨架。 |
+| `game/scripts/world_generation/world_skeleton_generator.gd` | 世界骨架生成编排器，按顺序调用山脉、海洋、河流和索引步骤。 |
+| `game/scripts/world_generation/world_mountain_generator.gd` | 山脉骨架生成步骤，写入 `skeleton.mountain_ridges`。 |
+| `game/scripts/world_generation/world_ocean_resolver.gd` | 海洋生成步骤，根据山脉后高度分布和 `ocean_ratio` 写入 `skeleton.sea_level`。 |
+| `game/scripts/world_generation/world_river_generator.gd` | 河流骨架生成步骤，写入 `skeleton.rivers`、`river_sources` 和 `lakes`。 |
+| `game/scripts/world_generation/world_skeleton_tile_indexer.gd` | 骨架索引步骤，写入 `mountains_by_tile`、`rivers_by_tile` 和 `lakes_by_tile`。 |
+| `game/scripts/world_generation/world_generation_math.gd` | 骨架生成共用工具，提供确定性 hash、全局高度采样、距离计算和 8 邻域方向。 |
 | `game/scripts/world_generation/world_function_sampler.gd` | 基于全局坐标采样连续世界函数。 |
 | `game/scripts/world_generation/big_map_summary_generator.gd` | 把连续世界函数汇总为大地图 `MapState`。 |
 | `game/scripts/world_generation/sub_map_generator.gd` | 小地图生成接口占位，后续接入懒加载小地图。 |
@@ -162,10 +172,10 @@ MapGenerator.generate(config)
 
 MapGenerator.generate_pipeline(config)
   -> WorldSkeletonGenerator.generate(config)
-      -> _generate_mountain_ridges()
-      -> resolve sea_level from ocean_ratio after mountains
-      -> _generate_rivers()
-      -> _build_skeleton_tile_index()
+      -> WorldMountainGenerator.generate(config, skeleton)
+      -> WorldOceanResolver.resolve_sea_level(config, skeleton)
+      -> WorldRiverGenerator.generate(config, skeleton)
+      -> WorldSkeletonTileIndexer.build(skeleton)
   -> BigMapSummaryGenerator.generate(config, skeleton, stage_id)
       -> _generate_tile_summary()
           -> WorldFunctionSampler.sample_base_height()
@@ -243,7 +253,13 @@ height = big_map_size
 
 ### 4. 生成山脉骨架
 
-`_generate_mountain_ridges(config, skeleton)` 会按 `mountain_count` 创建多条全局山脉折线。
+对应源码：
+
+```text
+game/scripts/world_generation/world_mountain_generator.gd
+```
+
+`WorldMountainGenerator.generate(config, skeleton)` 会按 `mountain_count` 创建多条全局山脉折线。
 
 每条山脉当前包含：
 
@@ -265,9 +281,27 @@ height = big_map_size
 
 山脉不是直接写入大地图地块的固定属性，而是在后续高度采样时通过“距离山脉折线的远近”产生抬升影响。
 
-### 5. 生成河流骨架
+### 5. 解析海洋和海平面
 
-`_generate_rivers(config, skeleton)` 会按 `river_source_count` 创建河流源头候选。
+对应源码：
+
+```text
+game/scripts/world_generation/world_ocean_resolver.gd
+```
+
+`WorldOceanResolver.resolve_sea_level(config, skeleton)` 会在山脉骨架生成之后运行。它按大地图地块中心采样“基础高度 + 山脉抬升”后的高度分布，再根据 `ocean_ratio` 选择对应分位数作为 `skeleton.sea_level`。
+
+这个步骤只确定海平面，不直接改写每个地块。后续 `WorldFunctionSampler.sample_ocean_height()` 和 `sample_final_height()` 会根据 `skeleton.sea_level` 对低于海平面的高度做海洋重塑。
+
+### 6. 生成河流骨架
+
+对应源码：
+
+```text
+game/scripts/world_generation/world_river_generator.gd
+```
+
+`WorldRiverGenerator.generate(config, skeleton)` 会按 `river_source_count` 创建河流源头候选。
 
 当前河流层只生成路径、流向、强度和大地图地块标记，不再对海拔执行河床下切，也不再为湿度采样叠加河流加成。
 
@@ -314,9 +348,15 @@ height = big_map_size
 
 河流切割目前在小地图生成时生效：平时允许轻微切割，遇到局部洼地或低矮阻挡时允许通过较低的切割成本继续前进；高海拔山体仍会产生额外成本。切割宽度使用当前河流宽度，最终会在小地图地格高度中形成一条与河流宽度接近的低海拔通道。
 
-### 5. 建立骨架索引
+### 7. 建立骨架索引
 
-`_build_skeleton_tile_index(skeleton)` 会把每条山脉和河流登记到相关大地图地块中。
+对应源码：
+
+```text
+game/scripts/world_generation/world_skeleton_tile_indexer.gd
+```
+
+`WorldSkeletonTileIndexer.build(skeleton)` 会把每条山脉和河流登记到相关大地图地块中。
 
 索引方法：
 
@@ -328,11 +368,34 @@ tile_x = floor(point.x / sub_map_size)
 tile_y = floor(point.y / sub_map_size)
 ```
 
-3. 把该结构登记到目标地块及其周围 8 个邻居。
+3. 山脉登记到目标地块及其周围 8 个邻居，用于渲染连续脊线和影响范围。
+4. 河流只登记路径中心点所在的大地图地块，不登记周围 8 个邻居。
 
-这样做的目的不是精确覆盖所有折线经过的地块，而是给大地图摘要阶段一个快速提示：某个地块附近可能有山脉或河流，需要生成 `ridge_path_points` 或 `river_path_points` 供预览和正式 overlay 使用。
+山脉索引不是精确覆盖所有折线经过的地块，而是给大地图摘要阶段一个快速提示：某个地块附近可能有山脉，需要生成 `ridge_path_points` 供预览和正式 overlay 使用。河流索引必须保持中心线精确，否则相邻 8 个地块会被同时标记为河流，导致大地图预览出现多排并行河流箭头。
 
-### 6. 连续函数采样
+`TileState.has_river` 只由 `skeleton.rivers_by_tile` 决定。`river_strength` 仍保留为连续采样强度数据，但不会单独把邻近地块标成河流地块。
+
+### 8. 骨架生成共用工具
+
+对应源码：
+
+```text
+game/scripts/world_generation/world_generation_math.gd
+```
+
+`WorldGenerationMath` 是骨架生成阶段的纯工具脚本，集中保存以下逻辑：
+
+- `hash01(seed, salt, x, y)`：确定性伪随机数。
+- `sample_base_height()`：大陆衰减和多尺度高度噪声。
+- `sample_height_after_mountains()`：基础高度叠加山脉影响。
+- `sample_layered_height()`：按海平面重塑后的分层高度。
+- `sample_mountain_influence()`：点到山脉折线的影响强度。
+- `tile_center()`、`tile_height()`、`is_ocean_tile()`：河流寻路使用的大地图地块查询。
+- `distance_to_polyline()`、`directions8()`：几何和 8 邻域工具。
+
+这些函数不保存状态，只依赖传入的 `seed`、`config` 和 `skeleton`，因此不会改变生成顺序的确定性。
+
+### 9. 连续函数采样
 
 `WorldFunctionSampler` 是当前生成器的核心。它不根据局部坐标或生成顺序取随机数，而是根据全局坐标采样。
 
@@ -593,12 +656,12 @@ hash01(skeleton.seed, salt, world_x / scale, world_y / scale)
 
 - 同一个 seed、同一组参数、同一个坐标，采样结果固定。
 - 生成顺序变化不影响单点采样结果。
-- 大地图摘要和未来小地图只要使用同一全局坐标规则，就能保持边界连续。
+- 大地图摘要和小地图只要使用同一全局坐标规则，就能保持基础高度边界连续。河流边界还需要依赖完整全局河流折线裁剪，确保入口/出口位置一致。
 
 当前仍需注意：
 
 - 山脉和河流骨架本身由固定顺序生成，改变 `mountain_count` 或 `river_source_count` 会改变结构数量。
-- 当前河流按大地图地块级别下坡追踪，尚未细化到小地图地格级真实水文。
+- 当前河流先按大地图地块级别下坡追踪，再由小地图生成器按完整全局河流折线裁剪并细化到地格级河道；该水文仍是原型级，没有完整流量守恒和侵蚀迭代。
 - `summary_sample_resolution` 越高，大地图摘要越接近真实局部地形，但生成耗时越高。
 
 ## 当前限制

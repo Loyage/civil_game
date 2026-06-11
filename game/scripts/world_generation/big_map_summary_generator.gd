@@ -54,7 +54,7 @@ func _generate_tile_summary(config, skeleton, sampler, col: int, row: int, stage
 	tile.temperature = temp_total / float(total)
 	tile.moisture = moisture_total / float(total)
 	tile.river_strength = river_total / float(total)
-	tile.has_river = stage_id in [PipelineResultScript.STAGE_RIVERS, PipelineResultScript.STAGE_FINAL] and (tile.river_strength > 0.08 or skeleton.rivers_by_tile.has(tile.tile_key))
+	tile.has_river = stage_id in [PipelineResultScript.STAGE_RIVERS, PipelineResultScript.STAGE_FINAL] and skeleton.rivers_by_tile.has(tile.tile_key)
 	tile.biome = _dominant_biome(biome_counts)
 	tile.terrain_tags = _terrain_tags(tile)
 	if stage_id in [PipelineResultScript.STAGE_MOUNTAINS, PipelineResultScript.STAGE_FINAL]:
