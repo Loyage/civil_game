@@ -99,6 +99,12 @@ game/scenes/dev/MapGeneratorPreview.tscn
   - 河流
   - 特征
   - 走向
+- 海拔视图：
+  - 使用热力图显示海拔，低海拔为蓝色，高海拔逐步过渡到红色和白色。
+  - 大地图按固定 `-256..256` 高度范围映射颜色。
+  - 小地图按当前小地图地格高度的动态最小值和最大值映射颜色，但仍以 `0` 作为海平面分界。
+  - 海拔视图只显示高度，不额外叠加河流或水体标记；河流信息仍由“河流”和“走向”视图负责。
+  - 左侧摘要区会显示当前海拔图例。
 - 显示摘要：
   - 海洋比例
   - 山脉比例
@@ -127,8 +133,21 @@ game/scenes/dev/MapGeneratorPreview.tscn
   - 在同一预览场景内切换大地图/小地图。
   - 小地图不走缓存，直接用当前 seed 和选中 tile 生成。
   - 小地图支持右键拖动、Ctrl + 滚轮缩放和左键选择地格。
-  - 小地图复用 `View` 下拉框；当前已支持“海拔”视图，按 `-256..256` 高度渐变显示地格。
+  - 小地图复用 `View` 下拉框；当前已支持“海拔”视图，按当前小地图高度动态范围显示地格。
   - 左侧面板显示 tile key、平均高度和选中地格信息。
+
+海拔视图使用同一套颜色语义：
+
+| 颜色 | 大地图固定范围 | 小地图动态范围 | 含义 |
+| --- | --- | --- | --- |
+| 深蓝到青色 | `-256..0` | 海平面以下 | 水下高度，越低越深蓝 |
+| 绿色 | `0..64` | 陆地高度前 25% | 低地 |
+| 黄色 | `64..128` | 陆地高度 25%..50% | 丘陵 |
+| 橙色 | `128..192` | 陆地高度 50%..75% | 高地 |
+| 红色 | `192..240` | 陆地高度 75%..94% | 高山 |
+| 白色 | `240..256` | 陆地高度顶部 6% | 极高海拔 / 雪线 |
+
+热力图会在相邻颜色之间连续插值，便于观察高度变化和坡度趋势。海平面以下保持蓝色系，避免水下区域和陆地热力颜色混淆。
 
 预览视口交互由 `PreviewViewport.gui_input` 处理。预览场景整体是 UI Control 结构，不能依赖 `_unhandled_input`，否则鼠标事件可能先被 GUI 控件消费，导致右键拖动或左键选择不触发。
 
@@ -224,7 +243,7 @@ MapGenerator.generate_pipeline(config)
 | `seed` | `260603` | 所有确定性随机的根输入。 |
 | `big_map_size` | `40` | 大地图边长，当前强制为方形。 |
 | `sub_map_size` | `64` | 每个大地图地块内部对应的小地图边长。 |
-| `sea_level` | `0` | 兼容字段；当前实际海平面由 `ocean_ratio` 从基础高度 + 山脉抬升后的高度中求得。 |
+| `sea_level` | `0` | 兼容字段；当前实际海平面由 `ocean_ratio` 从基础高度 + 山脉抬升后的高度中求得，并配合海洋连通区过滤使用。 |
 | `ocean_ratio` | `0.30` | 海洋生成目标比例，预览工具可调整。 |
 | `mountain_count` | `6` | 生成多少条全局山脉脊线。 |
 | `river_source_count` | `8` | 生成多少个河流源头候选。实际河流可能因汇流或湖泊停止而少于该值。 |
@@ -311,9 +330,18 @@ game/scripts/world_generation/world_mountain_generator.gd
 game/scripts/world_generation/world_ocean_resolver.gd
 ```
 
-`WorldOceanResolver.resolve_sea_level(config, skeleton)` 会在山脉骨架生成之后运行。它按大地图地块中心采样“基础高度 + 山脉抬升”后的高度分布，再根据 `ocean_ratio` 选择对应分位数作为 `skeleton.sea_level`。
+`WorldOceanResolver.resolve_sea_level(config, skeleton)` 会在山脉骨架生成之后运行。它按大地图地块中心采样“基础高度 + 山脉抬升”后的高度分布，再根据 `ocean_ratio` 搜索海平面阈值。
 
-这个步骤只确定海平面，不直接改写每个地块。后续 `WorldFunctionSampler.sample_ocean_height()` 和 `sample_final_height()` 会根据 `skeleton.sea_level` 对低于海平面的高度做海洋重塑。
+海洋解析不再把所有低于阈值的零散低洼都算作海洋。当前规则：
+
+1. 使用大地图 8 邻域对低于候选海平面的地块做连通区分组。
+2. 连通区面积必须不小于 `max(8, 总地块数 * 1%)`。
+3. 小于面积底线的低洼区会被排除出海洋，并在最终高度采样时抬升到 `sea_level + 4`。
+4. 合格海洋地块写入 `skeleton.ocean_tiles`。
+5. 从海岸向海洋内部做距离 BFS，结果写入 `skeleton.ocean_distance_by_tile`。
+6. 海平面阈值会尽量调到使过滤后的海洋面积接近 `ocean_ratio`。
+
+后续 `WorldFunctionSampler.sample_ocean_height()` 和 `sample_final_height()` 会以 `skeleton.ocean_tiles` 作为真实海洋判定，而不是重新使用“高度低于海平面”的简单规则。海洋地块会根据离岸距离额外下沉，最大额外深度为 `64`，让深海和近岸陆地区分更明显。
 
 ### 6. 生成河流骨架
 
@@ -449,7 +477,7 @@ height = ocean_reshape(base + mountain)
 | `continent` | 中心大陆抬升，边缘衰减。 |
 | `detail` | 三层坐标 hash 噪声叠加。 |
 | `mountain` | 山脉折线附近增加高度，最高约 `150`。 |
-| `ocean_reshape` | 根据 `ocean_ratio` 在山脉后高度上求海平面，并重塑低地深度。 |
+| `ocean_reshape` | 根据连通海洋掩码重塑海洋深度；小低洼区抬升为陆地，海洋离岸越远越深。 |
 
 大陆基础高度：
 
@@ -576,7 +604,7 @@ sample_count = 4 x 4 = 16
 | `moisture` | 样本湿度平均值。 |
 | `river_strength` | 样本河流强度平均值。 |
 | `has_river` | `river_strength > 0.08` 或骨架索引中存在河流。 |
-| `biome` | 样本中出现次数最多的 biome。 |
+| `biome` | 样本中出现次数最多的 biome；如果海洋阶段后的水域样本超过半数，则强制为 `ocean`。 |
 | `terrain_tags` | 根据 biome 推导出的标签。 |
 
 `terrain_tags` 当前推导规则：

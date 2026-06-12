@@ -3,6 +3,8 @@ extends RefCounted
 
 const MIN_HEIGHT := -256
 const MAX_HEIGHT := 256
+const SHALLOW_LAND_HEIGHT_ABOVE_SEA := 4
+const MAX_OCEAN_DEPTH_BONUS := 64
 
 var skeleton
 
@@ -17,10 +19,14 @@ func sample_base_height(world_x: int, world_y: int) -> int:
 
 func sample_ocean_height(world_x: int, world_y: int) -> int:
 	var mountain_height := sample_height_after_mountains(world_x, world_y)
-	if mountain_height >= skeleton.sea_level:
+	if not _is_ocean_world_point(world_x, world_y):
+		if mountain_height < skeleton.sea_level:
+			return clampi(skeleton.sea_level + SHALLOW_LAND_HEIGHT_ABOVE_SEA, MIN_HEIGHT, MAX_HEIGHT)
 		return mountain_height
 	var depth := clampf(float(skeleton.sea_level - mountain_height) / 180.0, 0.0, 1.0)
-	var reshaped: int = min(mountain_height, skeleton.sea_level - 4 - int(round(pow(depth, 1.35) * 96.0)))
+	var distance_depth := clampf(float(_ocean_distance(world_x, world_y)) / 8.0, 0.0, 1.0)
+	var depth_bonus := int(round(distance_depth * float(MAX_OCEAN_DEPTH_BONUS)))
+	var reshaped: int = min(mountain_height, skeleton.sea_level - 4 - int(round(pow(depth, 1.35) * 48.0)) - depth_bonus)
 	return clampi(reshaped, MIN_HEIGHT, MAX_HEIGHT)
 
 func sample_mountain_delta(world_x: int, world_y: int) -> int:
@@ -73,7 +79,7 @@ func sample_biome(world_x: int, world_y: int) -> String:
 	var temperature := sample_temperature(world_x, world_y)
 	var moisture := sample_moisture(world_x, world_y)
 	var river_strength := sample_river_strength(world_x, world_y)
-	if height < skeleton.sea_level:
+	if _is_ocean_world_point(world_x, world_y):
 		return "ocean"
 	if river_strength > 0.70:
 		return "river"
@@ -94,6 +100,18 @@ func sample_biome(world_x: int, world_y: int) -> String:
 	if moisture > 0.35:
 		return "grassland"
 	return "plain"
+
+func _is_ocean_world_point(world_x: int, world_y: int) -> bool:
+	if skeleton == null or skeleton.ocean_tiles.is_empty():
+		return false
+	var tile_x: int = int(floor(float(world_x) / float(maxi(1, skeleton.sub_map_size))))
+	var tile_y: int = int(floor(float(world_y) / float(maxi(1, skeleton.sub_map_size))))
+	return skeleton.ocean_tiles.has("%d:%d" % [tile_x, tile_y])
+
+func _ocean_distance(world_x: int, world_y: int) -> int:
+	var tile_x: int = int(floor(float(world_x) / float(maxi(1, skeleton.sub_map_size))))
+	var tile_y: int = int(floor(float(world_y) / float(maxi(1, skeleton.sub_map_size))))
+	return int(skeleton.ocean_distance_by_tile.get("%d:%d" % [tile_x, tile_y], 0))
 
 func _sample_continent_height(world_x: int, world_y: int) -> float:
 	var world_size := float(skeleton.big_map_size * skeleton.sub_map_size)

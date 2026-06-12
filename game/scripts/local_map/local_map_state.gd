@@ -18,7 +18,7 @@ var river_carve_points: Array
 var average_height: int
 
 func _init() -> void:
-	version = 5
+	version = 7
 	world_seed = 0
 	tile_key = ""
 	tile_col = 0
@@ -46,7 +46,7 @@ func is_valid_cell(x: int, y: int) -> bool:
 	return x >= 0 and x < width and y >= 0 and y < height
 
 func global_cell_x(x: int) -> int:
-	return tile_col * max(1, width - 1) + x
+	return tile_col * max(1, width) + x
 
 func global_cell_y(y: int) -> int:
-	return tile_row * max(1, height - 1) + y
+	return tile_row * max(1, height) + y

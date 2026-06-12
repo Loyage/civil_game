@@ -77,6 +77,8 @@ var selected_tile := Vector2i(-1, -1)
 var selected_cell := Vector2i(-1, -1)
 var generation_task
 var is_generating := false
+var local_elevation_min := -256
+var local_elevation_max := 256
 
 func _ready() -> void:
 	_setup_view_modes()
@@ -85,7 +87,7 @@ func _ready() -> void:
 	cancel_generation_button.pressed.connect(_cancel_generation)
 	random_seed_button.pressed.connect(_randomize_seed)
 	local_map_button.pressed.connect(_toggle_local_map)
-	view_mode_button.item_selected.connect(func(_index: int) -> void: _render_preview())
+	view_mode_button.item_selected.connect(func(_index: int) -> void: _on_view_mode_changed())
 	stage_button.item_selected.connect(func(_index: int) -> void: _show_selected_stage())
 	direction_overlay_toggle.toggled.connect(func(_enabled: bool) -> void: _update_direction_overlay_visibility())
 	preview_viewport.resized.connect(_apply_view_transform)
@@ -251,6 +253,7 @@ func _render_local_map() -> void:
 	if local_map_state == null:
 		return
 
+	_update_local_elevation_range()
 	var image = Image.create(local_map_state.width, local_map_state.height, false, Image.FORMAT_RGBA8)
 	for y in range(local_map_state.height):
 		for x in range(local_map_state.width):
@@ -265,7 +268,7 @@ func _render_local_map() -> void:
 func _local_cell_color(index: int) -> Color:
 	var view_id = view_mode_button.get_selected_id()
 	if view_id == VIEW_ELEVATION:
-		return _height_color(local_map_state.heights[index])
+		return _elevation_color(int(local_map_state.heights[index]), local_elevation_min, local_elevation_max)
 
 	if local_map_state.river_flags[index] == 1:
 		return Color("#2fb8ff")
@@ -306,7 +309,40 @@ func _gradient_color(value: float, low: Color, high: Color) -> Color:
 	return low.lerp(high, clampf(value, 0.0, 1.0))
 
 func _height_color(height: int) -> Color:
-	return _gradient_color(inverse_lerp(-256.0, 256.0, float(height)), Color("#16345f"), Color("#f0f0dc"))
+	return _elevation_color(height, -256, 256)
+
+func _elevation_color(height: int, min_height: int, max_height: int) -> Color:
+	if height < 0:
+		var water_min: int = mini(min_height, -1)
+		var water_t := inverse_lerp(float(water_min), 0.0, float(height))
+		return Color("#08306b").lerp(Color("#1f9bcf"), clampf(water_t, 0.0, 1.0))
+
+	var land_max: int = maxi(1, max_height)
+	var land_t := inverse_lerp(0.0, float(land_max), float(height))
+	return _sample_elevation_land_gradient(clampf(land_t, 0.0, 1.0))
+
+func _sample_elevation_land_gradient(t: float) -> Color:
+	if t < 0.25:
+		return Color("#2fbf71").lerp(Color("#d7c84f"), inverse_lerp(0.0, 0.25, t))
+	if t < 0.50:
+		return Color("#d7c84f").lerp(Color("#e8892e"), inverse_lerp(0.25, 0.50, t))
+	if t < 0.75:
+		return Color("#e8892e").lerp(Color("#c83f2f"), inverse_lerp(0.50, 0.75, t))
+	return Color("#c83f2f").lerp(Color("#f6f1e1"), inverse_lerp(0.75, 1.0, t))
+
+func _update_local_elevation_range() -> void:
+	if local_map_state == null or local_map_state.heights.is_empty():
+		local_elevation_min = -256
+		local_elevation_max = 256
+		return
+	local_elevation_min = int(local_map_state.heights[0])
+	local_elevation_max = int(local_map_state.heights[0])
+	for raw_height in local_map_state.heights:
+		var height: int = int(raw_height)
+		local_elevation_min = mini(local_elevation_min, height)
+		local_elevation_max = maxi(local_elevation_max, height)
+	local_elevation_min = mini(local_elevation_min, -1)
+	local_elevation_max = maxi(local_elevation_max, 1)
 
 func _feature_color(tile) -> Color:
 	if tile.is_mountain():
@@ -348,7 +384,7 @@ func _update_summary(config) -> void:
 		elevation_total += float(tile.elevation)
 
 	var total = max(1.0, float(map_state.width * map_state.height))
-	summary_label.text = "seed %d | %dx%d | stage %s | ocean_ratio %.2f | mountain_count %d | river_source_count %d | continent_bias %.2f\n海洋 %.1f%%  山脉 %.1f%%  森林 %.1f%%  河流地块 %d  平均海拔 %.2f" % [
+	var summary_text := "seed %d | %dx%d | stage %s | ocean_ratio %.2f | mountain_count %d | river_source_count %d | continent_bias %.2f\n海洋 %.1f%%  山脉 %.1f%%  森林 %.1f%%  河流地块 %d  平均海拔 %.2f" % [
 		config.seed,
 		config.width,
 		config.height,
@@ -363,6 +399,7 @@ func _update_summary(config) -> void:
 		int(counts["river"]),
 		elevation_total / total
 	]
+	summary_label.text = _summary_text_with_elevation_legend(summary_text)
 
 func _handle_mouse_button(event: InputEventMouseButton) -> void:
 	if event.button_index == MOUSE_BUTTON_RIGHT:
@@ -730,11 +767,40 @@ func _show_selected_stage() -> void:
 	_reset_view_deferred()
 
 func _update_summary_for_local_map(tile) -> void:
-	summary_label.text = "小地图 %s | seed %d | 平均高度 %d" % [
+	var summary_text := "小地图 %s | seed %d | 平均高度 %d" % [
 		tile.tile_key,
 		int(seed_input.value),
 		local_map_state.average_height
 	]
+	summary_label.text = _summary_text_with_elevation_legend(summary_text)
+
+func _summary_text_with_elevation_legend(summary_text: String) -> String:
+	if view_mode_button.get_selected_id() != VIEW_ELEVATION:
+		return summary_text
+	return "%s\n%s" % [summary_text, _elevation_legend_text()]
+
+func _elevation_legend_text() -> String:
+	if preview_mode == MODE_LOCAL:
+		return "海拔热力图（小地图动态范围 %d..%d）：深蓝深水、青浅水、绿低地、黄中海拔、橙高地、红高山、白最高海拔" % [
+			local_elevation_min,
+			local_elevation_max
+		]
+	return "海拔热力图（大地图 -256..256）：深蓝 -256..0，绿 0..64，黄 64..128，橙 128..192，红 192..240，白 240..256"
+
+func _on_view_mode_changed() -> void:
+	_render_preview()
+	if preview_mode == MODE_LOCAL:
+		_update_local_summary_after_view_change()
+	elif map_state != null:
+		_update_summary(_build_config_from_inputs())
+
+func _update_local_summary_after_view_change() -> void:
+	if local_map_state == null or map_state == null:
+		return
+	var tile = map_state.get_tile_by_offset(selected_tile.x, selected_tile.y)
+	if tile == null:
+		return
+	_update_summary_for_local_map(tile)
 
 func _show_empty_cell_info(tile_key: String) -> void:
 	tile_info_label.text = "小地图：%s\n地格：未选择" % tile_key

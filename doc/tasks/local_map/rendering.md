@@ -31,7 +31,7 @@ game/scripts/local_map/local_map_root.gd
 渲染结果是 `sub_map_size x sub_map_size` 高度图：
 
 - 高度越高颜色越亮
-- `height < 0` 显示为水色
+- `water_flags` 显示为水色
 - 河流地格显示为更亮或更饱和的蓝色
 - 山脉或高坡区域用灰白色表达
 

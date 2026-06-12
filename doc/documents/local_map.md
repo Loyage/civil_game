@@ -10,8 +10,8 @@
 - 小地图边长由 `sub_map_size` 配置控制；预览工具中可以通过 `Sub Map Size` 调整。
 - 小地图高度范围为 `-256..256` 整数。
 - 小地图高度逐地格复用世界生成器的 `WorldSkeletonGenerator + WorldFunctionSampler`，不再使用旧版本地噪声高度场。
-- 水体规则为 `height < 0`。
-- 河流地块会根据大地图粗路径生成地格级细化河道，并按动态宽度/深度压低河床。
+- 水体规则由大地图海洋掩码和海平面共同决定。
+- 河流地块会根据大地图粗路径生成地格级细化河道，并按全局 `width_profile` 采样宽度后压低河床。
 - `LocalMapRoot` 用 `ImageTexture` 渲染高度图，避免为每个地格创建节点。
 - `LocalMapRoot` 使用 `CanvasLayer` 固定在屏幕坐标渲染，不受大地图相机平移和缩放影响。
 - 小地图视口支持右键拖动，以及按住 Ctrl 后滚轮缩放。
@@ -30,16 +30,16 @@
 
 ## 边界连续性
 
-小地图内部坐标为 `cell(x, y)`，范围 `0..sub_map_size - 1`。为了让相邻地块共享边界高度完全一致，全局采样坐标使用：
+小地图内部坐标为 `cell(x, y)`，范围 `0..sub_map_size - 1`。为了让小地图严格归属于对应的大地图地块，并与大地图海洋掩码保持一致，全局采样坐标使用：
 
 ```text
-global_cell_x = tile_col * (sub_map_size - 1) + cell_x
-global_cell_y = tile_row * (sub_map_size - 1) + cell_y
+global_cell_x = tile_col * sub_map_size + cell_x
+global_cell_y = tile_row * sub_map_size + cell_y
 ```
 
-因此右侧相邻地块的 `cell(0, y)` 与当前地块的 `cell(sub_map_size - 1, y)` 会采样同一个全局坐标。
+这样每个大地图地块覆盖一个独立的 `sub_map_size x sub_map_size` 全局采样区间，避免小地图因为 `sub_map_size - 1` 的累计偏移采样到相邻大地图地块，导致大地图显示陆地但小地图内部大面积为水。
 
-基础边界高度只使用全局高度场。当前全局高度场来自 `WorldFunctionSampler.sample_height(global_cell_x, global_cell_y)`，因此同一种子和同一配置下，相邻小地图共享边界的原始高度采样结果一致。
+基础高度只使用全局高度场。当前全局高度场来自 `WorldFunctionSampler.sample_height(global_cell_x, global_cell_y)`，因此同一种子和同一配置下生成结果稳定；相邻小地图边界追求视觉连续，但不再要求完全复用同一个边界采样坐标。
 
 河流是例外：为了保证跨地块入口/出口真正连通，河流可以在边界地格标记 `river_flags` 并下切河床。相邻小地图会从同一条全局河流折线裁剪出各自的入口/出口，因此共享边界上的河流位置由全局路径决定，而不是由单个地块独立猜测。
 
@@ -65,8 +65,8 @@ LocalMapGenerator.generate(tile)
 小地图每个地格先转换为全局地格坐标：
 
 ```text
-global_x = tile_col * (sub_map_size - 1) + cell_x
-global_y = tile_row * (sub_map_size - 1) + cell_y
+global_x = tile_col * sub_map_size + cell_x
+global_y = tile_row * sub_map_size + cell_y
 ```
 
 然后调用：
@@ -74,6 +74,8 @@ global_y = tile_row * (sub_map_size - 1) + cell_y
 ```text
 WorldFunctionSampler.sample_height(global_x, global_y)
 ```
+
+`water_flags` 不再只根据 `height < 0` 推导。当前规则是：当前大地图地块必须属于 `skeleton.ocean_tiles`，且地格高度低于 `skeleton.sea_level`，才标记为水域。非海洋大地图地块内部的低洼地会在世界采样阶段被抬升到海平面以上，避免大地图陆地进入后显示为大面积水域。
 
 高度值被限制在：
 
@@ -98,12 +100,12 @@ WorldFunctionSampler.sample_height(global_x, global_y)
 5. 对低矮上坡设置较低切割成本，让河流能切开局部洼地边缘或低矮阻挡。
 6. 对高海拔山体增加额外成本，避免河流无代价穿越山脊。
 7. 拼接所有分段路径，得到当前小地图内的完整河段。
-8. 沿路径记录 `river_carve_points`，并按宽度/深度执行河床下切。
+8. 沿路径记录 `river_carve_points`，宽度通过当前地格投影到全局河流折线后从 `width_profile` 插值获得。
 9. 边界地格也允许执行河床下切，以保证当前小地图的出口和相邻小地图的入口在高度与河流标记上连续。
 
 如果当前地块找不到对应的全局河流折线，生成器才会回退到旧版 `river_path_points`、`river_flow` 和湖泊标记推导入口/出口。这个回退只用于兼容异常数据，不是主路径。
 
-河流宽度默认从 `3` 逐渐增长到最大 `12`，但增长速度较慢；当前小地图距离增长系数为 `0.42`，大地图 `river_strength` 只提供最多 `0.24` 的额外宽度增长。切割深度从 `10` 增长到最大 `42`，同时参考当前宽度和下游距离。中心河床会被压低到海平面以下，外围按距离衰减，形成与河宽接近的低海拔通道。
+河流宽度默认从 `3` 逐渐增长到最大 `12`，具体宽度由世界河流骨架里的 `width_profile` 决定。小地图只负责把细化后的河道地格投影回全局河流折线并读取对应宽度，因此相邻地块入口/出口处会继承同一条全局河流上的连续宽度，不会因为每个小地图局部重新从起点增长而变窄。切割深度从 `10` 增长到最大 `42`，同时参考当前宽度和小地图内下游距离。中心河床会被压低到海平面以下，外围按距离衰减，形成与河宽接近的低海拔通道。
 
 `LocalMapState.river_carve_points` 保存当前小地图内已生成河段的切割点，每个点包含：
 
@@ -118,10 +120,10 @@ WorldFunctionSampler.sample_height(global_x, global_y)
 
 ### 水体和坡度
 
-水体规则保持简单：
+水体规则与大地图海洋掩码保持一致：
 
 ```text
-height < 0 => water
+tile in skeleton.ocean_tiles and height < skeleton.sea_level => water
 ```
 
 坡度使用当前地格与周围 8 个邻居的最大高度差：
@@ -134,14 +136,14 @@ slope = max(abs(center_height - neighbor_height))
 
 ## 缓存版本
 
-本次小地图河流改为按完整全局河流折线裁剪入口/出口，并允许边界河床下切。缓存版本升级为：
+本次小地图河流改为按完整全局河流折线裁剪入口/出口，边界河床允许下切，河宽按全局 `width_profile` 采样。缓存版本升级为：
 
 ```text
-CACHE_VERSION = 5
-LocalMapState.version = 5
+CACHE_VERSION = 7
+LocalMapState.version = 7
 ```
 
-旧版缓存路径不会被读取，新生成的小地图会写入 `v5` 目录。
+旧版缓存路径不会被读取，新生成的小地图会写入 `v7` 目录。
 
 同一个缓存版本下，缓存读取还会校验 `width` 和 `height` 是否等于当前配置的 `sub_map_size`。如果玩家调整小地图边长，旧尺寸缓存不会被复用，会重新生成对应尺寸的小地图。
 

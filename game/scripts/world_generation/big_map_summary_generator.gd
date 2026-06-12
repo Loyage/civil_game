@@ -51,6 +51,7 @@ func _generate_tile_summary(config, skeleton, sampler, col: int, row: int, stage
 	var temp_total := 0.0
 	var moisture_total := 0.0
 	var river_total := 0.0
+	var water_sample_count := 0
 	var resolution: int = int(config.summary_sample_resolution)
 	for sy in range(resolution):
 		for sx in range(resolution):
@@ -62,6 +63,8 @@ func _generate_tile_summary(config, skeleton, sampler, col: int, row: int, stage
 			var biome: String = _sample_stage_biome(skeleton, sampler, world_x, world_y, stage_id)
 			heights.append(height)
 			biome_counts[biome] = int(biome_counts.get(biome, 0)) + 1
+			if biome == "ocean":
+				water_sample_count += 1
 			temp_total += sampler.sample_temperature(world_x, world_y)
 			moisture_total += sampler.sample_moisture(world_x, world_y)
 			river_total += sampler.sample_river_strength(world_x, world_y)
@@ -76,6 +79,8 @@ func _generate_tile_summary(config, skeleton, sampler, col: int, row: int, stage
 	tile.river_strength = river_total / float(total)
 	tile.has_river = _stage_includes_rivers(stage_id) and skeleton.rivers_by_tile.has(tile.tile_key)
 	tile.biome = _dominant_biome(biome_counts)
+	if _stage_includes_ocean(stage_id) and water_sample_count > total / 2:
+		tile.biome = "ocean"
 	tile.terrain_tags = _terrain_tags(tile)
 	if _stage_includes_mountains(stage_id):
 		_apply_mountain_summary(skeleton, tile)
@@ -161,6 +166,14 @@ func _stage_includes_mountains(stage_id: String) -> bool:
 
 func _stage_includes_rivers(stage_id: String) -> bool:
 	return stage_id in [
+		PipelineResultScript.STAGE_RIVERS,
+		PipelineResultScript.STAGE_ENVIRONMENT,
+		PipelineResultScript.STAGE_FINAL
+	]
+
+func _stage_includes_ocean(stage_id: String) -> bool:
+	return stage_id in [
+		PipelineResultScript.STAGE_OCEAN,
 		PipelineResultScript.STAGE_RIVERS,
 		PipelineResultScript.STAGE_ENVIRONMENT,
 		PipelineResultScript.STAGE_FINAL

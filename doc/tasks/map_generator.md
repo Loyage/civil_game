@@ -140,11 +140,17 @@ WorldSkeletonGenerator.generate(config)
 - `rivers`
 - `river_sources`
 - `lakes`
+- `ocean_tiles`
+- `ocean_distance_by_tile`
 - `mountains_by_tile`
 - `rivers_by_tile`
 - 河流骨架字段包含 `points`、`width_profile`、`merge_target` 和 `reached_ocean`
 
 骨架不保存每个小地图地格的完整地形，只保存能影响连续函数采样的大尺度结构。
+
+海洋解析在山脉之后运行。`WorldOceanResolver` 会按大地图地块中心采样山脉后高度，再搜索接近 `ocean_ratio` 的海平面阈值。候选海洋使用大地图 8 邻域做连通区过滤，连通面积必须不小于 `max(8, 总地块数 * 1%)`；小于底线的低洼区不算海洋，最终高度会抬升到 `sea_level + 4`。合格海洋写入 `skeleton.ocean_tiles`，并计算 `skeleton.ocean_distance_by_tile`，后续采样会让离海岸越远的海洋越深，最大额外下沉 `64`。
+
+大地图摘要必须和小地图采样保持一致。海洋阶段之后，如果一个大地图地块内部摘要样本中水域超过半数，则该地块主体 `biome` 强制为 `ocean`；小地图内部 `water_flags` 也只能由 `skeleton.ocean_tiles` 和 `skeleton.sea_level` 共同决定，不能只看高度是否小于 `0`。
 
 河流从山脉影响范围内的高海拔陆地源头出发。河流源头之间存在排他性，新源头必须与已有源头保持至少 `4` 个大地图地块的直线距离；候选不足时放弃该河流，不放宽距离；湖泊溢出源头也受同样限制。确定源头后，河流按大地图 8 邻域执行成本寻路，优先寻找入海路径。成本包含移动距离、上坡切割、高地、山脉、下坡奖励和入海奖励；允许切开短距离局部高地，单步上坡超过 `72` 高度且不是海洋时视为不可通行。到达海洋后停止；进入已有河流宽度范围后停止并视为汇流；找不到可行入海路径时记录湖泊。河流宽度单位为全局地格，默认从 `3` 随距离和汇流低速增长到最大 `12`；当前距离增长系数为 `0.42`，汇流增宽系数为 `0.16`。
 
@@ -156,7 +162,7 @@ WorldSkeletonGenerator.generate(config)
 
 - `game/scripts/world_generation/world_skeleton_generator.gd`：入口和步骤顺序。
 - `game/scripts/world_generation/world_mountain_generator.gd`：山脉折线生成。
-- `game/scripts/world_generation/world_ocean_resolver.gd`：按 `ocean_ratio` 解析海平面。
+- `game/scripts/world_generation/world_ocean_resolver.gd`：按 `ocean_ratio` 解析海平面、连通海洋和离岸距离。
 - `game/scripts/world_generation/world_river_generator.gd`：河流源头选择、入海寻路、汇流和湖泊记录。
 - `game/scripts/world_generation/world_skeleton_tile_indexer.gd`：山脉/河流索引。
 - `game/scripts/world_generation/world_generation_math.gd`：hash、高度、距离、方向等共用函数。
@@ -275,6 +281,12 @@ game/scripts/dev/map_generator_preview.gd
   - 河流
   - 特征
   - 走向
+- 海拔视图使用热力图：
+  - 低海拔为蓝色，高海拔逐步过渡到红色和白色。
+  - 海平面以下保持蓝色系，和陆地热力颜色区分。
+  - 大地图按固定 `-256..256` 显示。
+  - 小地图按当前小地图高度动态范围显示，并继续以 `0` 作为海平面。
+  - 摘要区显示简要海拔图例。
 - 支持大地图走向显示：
   - 默认开启山脉脊线和河流走向叠加。
   - 提供“显示走向”开关。
@@ -465,6 +477,10 @@ MapGeneratorPreview
 - [x] 实现阶段摘要逐行进度显示
 - [x] 实现河流骨架按源头分帧生成进度
 - [x] 调整海洋生成到山脉生成之后
+- [x] 实现海洋连通区过滤
+- [x] 实现小低洼区抬升为陆地
+- [x] 实现海洋离岸距离下沉
+- [x] 修正大地图陆地与小地图水域判定不一致
 - [x] 实现预览工具阶段下拉框
 - [x] 实现 `ocean_ratio` 预览参数
 - [x] 实现山脉源头下坡河流生成
@@ -493,6 +509,8 @@ MapGeneratorPreview
 - [x] 小地图预览支持右键拖动和 Ctrl + 滚轮缩放
 - [x] 小地图预览支持左键选择地格
 - [x] 小地图预览支持海拔视图
+- [x] 海拔视图使用蓝到红白的热力图
+- [x] 海拔视图显示简要热力图图例
 - [x] 左侧面板显示小地图地格信息
 - [x] 创建 `world_generation` 目录
 - [x] 实现 `WorldSkeleton` 数据结构
