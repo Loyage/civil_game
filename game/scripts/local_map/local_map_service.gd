@@ -1,7 +1,7 @@
 class_name LocalMapService
 extends RefCounted
 
-const CACHE_VERSION := 5
+const CACHE_VERSION := 7
 const CACHE_MAGIC := "CLM1"
 const CACHE_ROOT := "user://local_maps"
 const MAP_CONFIG_PATH := "res://game/data/maps/map_generation_config.json"

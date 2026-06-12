@@ -18,7 +18,7 @@ var river_carve_points: Array
 var average_height: int
 
 func _init() -> void:
-	version = 6
+	version = 7
 	world_seed = 0
 	tile_key = ""
 	tile_col = 0

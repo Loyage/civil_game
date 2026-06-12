@@ -100,13 +100,14 @@ func _apply_river(state, tile) -> void:
 	if not tile.has_river:
 		return
 
-	var path = _find_refined_river_path(state, tile)
+	var river: Dictionary = _river_for_tile(tile)
+	var path: Array[Vector2i] = _find_refined_river_path(state, tile)
 	if path.is_empty():
 		return
 
 	for index in range(path.size()):
 		var point: Vector2i = path[index]
-		var width: float = _river_width_at(tile, index, path.size())
+		var width: float = _river_width_at(tile, state, point, index, path.size(), river)
 		var depth: float = _river_depth_at(width, index, path.size())
 		_record_river_carve(state, point, width, depth)
 		_carve_river_at(state, point.x, point.y, width, depth)
@@ -374,10 +375,50 @@ func _straight_path(start: Vector2i, goal: Vector2i) -> Array[Vector2i]:
 		path.append(Vector2i(int(round(lerpf(start.x, goal.x, t))), int(round(lerpf(start.y, goal.y, t)))))
 	return path
 
-func _river_width_at(tile, index: int, path_size: int) -> float:
+func _river_width_at(tile, state, point: Vector2i, index: int, path_size: int, river: Dictionary) -> float:
+	if not river.is_empty():
+		return _river_width_at_world_point(state, point, river)
+	return _local_river_width_at(tile, index, path_size)
+
+func _local_river_width_at(tile, index: int, path_size: int) -> float:
 	var distance_growth: float = float(index) / maxf(1.0, float(path_size - 1))
 	var strength_growth: float = clampf(float(tile.river_strength) * 1.0, 0.0, RIVER_STRENGTH_WIDTH_GROWTH)
 	return lerpf(RIVER_START_WIDTH, RIVER_MAX_WIDTH, clampf(distance_growth * RIVER_DISTANCE_WIDTH_GROWTH + strength_growth, 0.0, 1.0))
+
+func _river_width_at_world_point(state, cell: Vector2i, river: Dictionary) -> float:
+	var points: Array = river.get("points", [])
+	var width_profile: Array = river.get("width_profile", [])
+	var fallback_width: float = float(river.get("width", RIVER_START_WIDTH))
+	if points.size() < 2:
+		return fallback_width
+
+	var world_point: Vector2 = Vector2(float(state.global_cell_x(cell.x)), float(state.global_cell_y(cell.y)))
+	var best_distance_sq: float = INF
+	var best_width: float = fallback_width
+	for index in range(points.size() - 1):
+		var start: Vector2 = points[index]
+		var end: Vector2 = points[index + 1]
+		var t: float = _segment_projection_t(world_point, start, end)
+		var closest: Vector2 = start.lerp(end, t)
+		var distance_sq: float = closest.distance_squared_to(world_point)
+		if distance_sq < best_distance_sq:
+			best_distance_sq = distance_sq
+			var start_width: float = _river_profile_width(width_profile, index, fallback_width)
+			var end_width: float = _river_profile_width(width_profile, index + 1, start_width)
+			best_width = lerpf(start_width, end_width, t)
+	return clampf(best_width, RIVER_START_WIDTH, RIVER_MAX_WIDTH)
+
+func _river_profile_width(width_profile: Array, index: int, fallback_width: float) -> float:
+	if index >= 0 and index < width_profile.size():
+		return float(width_profile[index])
+	return fallback_width
+
+func _segment_projection_t(point: Vector2, start: Vector2, end: Vector2) -> float:
+	var delta: Vector2 = end - start
+	var length_sq: float = delta.length_squared()
+	if is_zero_approx(length_sq):
+		return 0.0
+	return clampf((point - start).dot(delta) / length_sq, 0.0, 1.0)
 
 func _river_depth_at(width: float, index: int, path_size: int) -> float:
 	var distance_growth: float = float(index) / maxf(1.0, float(path_size - 1))
@@ -416,7 +457,7 @@ func _carve_river_at(state, center_x: int, center_y: int, width: float, depth: f
 
 func _derive_flags_and_slopes(state) -> void:
 	var total = 0
-	var is_ocean_tile := skeleton.ocean_tiles.has(state.tile_key)
+	var is_ocean_tile: bool = skeleton.ocean_tiles.has(state.tile_key)
 	for y in range(state.height):
 		for x in range(state.width):
 			var index = state.index(x, y)

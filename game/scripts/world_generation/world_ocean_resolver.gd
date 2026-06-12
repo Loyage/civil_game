@@ -7,7 +7,7 @@ const MIN_OCEAN_COMPONENT_TILES := 8
 const MIN_OCEAN_COMPONENT_RATIO := 0.01
 
 func resolve_sea_level(config, skeleton) -> int:
-	var heights := _sample_tile_heights(config, skeleton)
+	var heights: Dictionary = _sample_tile_heights(config, skeleton)
 	if heights.is_empty():
 		skeleton.ocean_tiles = {}
 		skeleton.ocean_distance_by_tile = {}
@@ -23,9 +23,9 @@ func resolve_sea_level(config, skeleton) -> int:
 		skeleton.ocean_distance_by_tile = {}
 		return sorted_heights[0]
 
-	var min_component_size := _min_component_size(config)
-	var selected_threshold := _select_threshold(config, heights, sorted_heights, target_count, min_component_size)
-	var ocean_tiles := _qualified_ocean_tiles(config, heights, selected_threshold, min_component_size)
+	var min_component_size: int = _min_component_size(config)
+	var selected_threshold: int = _select_threshold(config, heights, sorted_heights, target_count, min_component_size)
+	var ocean_tiles: Dictionary = _qualified_ocean_tiles(config, heights, selected_threshold, min_component_size)
 	skeleton.ocean_tiles = ocean_tiles
 	skeleton.ocean_distance_by_tile = _ocean_distance_by_tile(config, ocean_tiles)
 	return selected_threshold
@@ -52,7 +52,7 @@ func _select_threshold(config, heights: Dictionary, sorted_heights: Array[int], 
 	while low <= high:
 		var mid: int = int(floor(float(low + high) * 0.5))
 		var threshold: int = sorted_heights[mid]
-		var ocean_tiles := _qualified_ocean_tiles(config, heights, threshold, min_component_size)
+		var ocean_tiles: Dictionary = _qualified_ocean_tiles(config, heights, threshold, min_component_size)
 		var count: int = ocean_tiles.size()
 		if _is_better_count(count, best_count, target_count):
 			best_count = count
@@ -115,7 +115,7 @@ func _ocean_distance_by_tile(config, ocean_tiles: Dictionary) -> Dictionary:
 	var distance_by_tile := {}
 	var queue: Array[Vector2i] = []
 	for key in ocean_tiles.keys():
-		var tile := _tile_from_key(String(key))
+		var tile: Vector2i = _tile_from_key(String(key))
 		if _is_coastal_ocean_tile(config, ocean_tiles, tile):
 			distance_by_tile[key] = 0
 			queue.append(tile)
