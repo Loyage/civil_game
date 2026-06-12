@@ -30,16 +30,16 @@
 
 ## 边界连续性
 
-小地图内部坐标为 `cell(x, y)`，范围 `0..sub_map_size - 1`。为了让相邻地块共享边界高度完全一致，全局采样坐标使用：
+小地图内部坐标为 `cell(x, y)`，范围 `0..sub_map_size - 1`。为了让小地图严格归属于对应的大地图地块，并与大地图海洋掩码保持一致，全局采样坐标使用：
 
 ```text
-global_cell_x = tile_col * (sub_map_size - 1) + cell_x
-global_cell_y = tile_row * (sub_map_size - 1) + cell_y
+global_cell_x = tile_col * sub_map_size + cell_x
+global_cell_y = tile_row * sub_map_size + cell_y
 ```
 
-因此右侧相邻地块的 `cell(0, y)` 与当前地块的 `cell(sub_map_size - 1, y)` 会采样同一个全局坐标。
+这样每个大地图地块覆盖一个独立的 `sub_map_size x sub_map_size` 全局采样区间，避免小地图因为 `sub_map_size - 1` 的累计偏移采样到相邻大地图地块，导致大地图显示陆地但小地图内部大面积为水。
 
-基础边界高度只使用全局高度场。当前全局高度场来自 `WorldFunctionSampler.sample_height(global_cell_x, global_cell_y)`，因此同一种子和同一配置下，相邻小地图共享边界的原始高度采样结果一致。
+基础高度只使用全局高度场。当前全局高度场来自 `WorldFunctionSampler.sample_height(global_cell_x, global_cell_y)`，因此同一种子和同一配置下生成结果稳定；相邻小地图边界追求视觉连续，但不再要求完全复用同一个边界采样坐标。
 
 河流是例外：为了保证跨地块入口/出口真正连通，河流可以在边界地格标记 `river_flags` 并下切河床。相邻小地图会从同一条全局河流折线裁剪出各自的入口/出口，因此共享边界上的河流位置由全局路径决定，而不是由单个地块独立猜测。
 
@@ -65,8 +65,8 @@ LocalMapGenerator.generate(tile)
 小地图每个地格先转换为全局地格坐标：
 
 ```text
-global_x = tile_col * (sub_map_size - 1) + cell_x
-global_y = tile_row * (sub_map_size - 1) + cell_y
+global_x = tile_col * sub_map_size + cell_x
+global_y = tile_row * sub_map_size + cell_y
 ```
 
 然后调用：
@@ -74,6 +74,8 @@ global_y = tile_row * (sub_map_size - 1) + cell_y
 ```text
 WorldFunctionSampler.sample_height(global_x, global_y)
 ```
+
+`water_flags` 不再只根据 `height < 0` 推导。当前规则是：当前大地图地块必须属于 `skeleton.ocean_tiles`，且地格高度低于 `skeleton.sea_level`，才标记为水域。非海洋大地图地块内部的低洼地会在世界采样阶段被抬升到海平面以上，避免大地图陆地进入后显示为大面积水域。
 
 高度值被限制在：
 

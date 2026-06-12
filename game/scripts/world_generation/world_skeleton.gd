@@ -11,6 +11,8 @@ var mountain_ridges: Array
 var rivers: Array
 var river_sources: Array[Vector2i]
 var lakes: Array
+var ocean_tiles: Dictionary
+var ocean_distance_by_tile: Dictionary
 var mountains_by_tile: Dictionary
 var rivers_by_tile: Dictionary
 var lakes_by_tile: Dictionary
@@ -26,6 +28,8 @@ func _init() -> void:
 	rivers = []
 	river_sources = []
 	lakes = []
+	ocean_tiles = {}
+	ocean_distance_by_tile = {}
 	mountains_by_tile = {}
 	rivers_by_tile = {}
 	lakes_by_tile = {}

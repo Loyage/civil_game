@@ -34,6 +34,7 @@ var average_height: int
 - `heights` 长度为 `width * height`
 - 一维索引：`index = y * width + x`
 - `water_flags`、`river_flags` 使用紧凑数组表达派生状态
+- `water_flags` 只表示与大地图海洋掩码一致的水域：当前大地图地块属于 `skeleton.ocean_tiles`，且地格高度低于 `skeleton.sea_level`
 - `river_carve_points` 保存已生成河段的切割点、宽度和深度，不保存完整世界级河流切割图层
 
 ### `LocalCellState`

@@ -243,7 +243,7 @@ MapGenerator.generate_pipeline(config)
 | `seed` | `260603` | 所有确定性随机的根输入。 |
 | `big_map_size` | `40` | 大地图边长，当前强制为方形。 |
 | `sub_map_size` | `64` | 每个大地图地块内部对应的小地图边长。 |
-| `sea_level` | `0` | 兼容字段；当前实际海平面由 `ocean_ratio` 从基础高度 + 山脉抬升后的高度中求得。 |
+| `sea_level` | `0` | 兼容字段；当前实际海平面由 `ocean_ratio` 从基础高度 + 山脉抬升后的高度中求得，并配合海洋连通区过滤使用。 |
 | `ocean_ratio` | `0.30` | 海洋生成目标比例，预览工具可调整。 |
 | `mountain_count` | `6` | 生成多少条全局山脉脊线。 |
 | `river_source_count` | `8` | 生成多少个河流源头候选。实际河流可能因汇流或湖泊停止而少于该值。 |
@@ -330,9 +330,18 @@ game/scripts/world_generation/world_mountain_generator.gd
 game/scripts/world_generation/world_ocean_resolver.gd
 ```
 
-`WorldOceanResolver.resolve_sea_level(config, skeleton)` 会在山脉骨架生成之后运行。它按大地图地块中心采样“基础高度 + 山脉抬升”后的高度分布，再根据 `ocean_ratio` 选择对应分位数作为 `skeleton.sea_level`。
+`WorldOceanResolver.resolve_sea_level(config, skeleton)` 会在山脉骨架生成之后运行。它按大地图地块中心采样“基础高度 + 山脉抬升”后的高度分布，再根据 `ocean_ratio` 搜索海平面阈值。
 
-这个步骤只确定海平面，不直接改写每个地块。后续 `WorldFunctionSampler.sample_ocean_height()` 和 `sample_final_height()` 会根据 `skeleton.sea_level` 对低于海平面的高度做海洋重塑。
+海洋解析不再把所有低于阈值的零散低洼都算作海洋。当前规则：
+
+1. 使用大地图 8 邻域对低于候选海平面的地块做连通区分组。
+2. 连通区面积必须不小于 `max(8, 总地块数 * 1%)`。
+3. 小于面积底线的低洼区会被排除出海洋，并在最终高度采样时抬升到 `sea_level + 4`。
+4. 合格海洋地块写入 `skeleton.ocean_tiles`。
+5. 从海岸向海洋内部做距离 BFS，结果写入 `skeleton.ocean_distance_by_tile`。
+6. 海平面阈值会尽量调到使过滤后的海洋面积接近 `ocean_ratio`。
+
+后续 `WorldFunctionSampler.sample_ocean_height()` 和 `sample_final_height()` 会以 `skeleton.ocean_tiles` 作为真实海洋判定，而不是重新使用“高度低于海平面”的简单规则。海洋地块会根据离岸距离额外下沉，最大额外深度为 `64`，让深海和近岸陆地区分更明显。
 
 ### 6. 生成河流骨架
 
@@ -468,7 +477,7 @@ height = ocean_reshape(base + mountain)
 | `continent` | 中心大陆抬升，边缘衰减。 |
 | `detail` | 三层坐标 hash 噪声叠加。 |
 | `mountain` | 山脉折线附近增加高度，最高约 `150`。 |
-| `ocean_reshape` | 根据 `ocean_ratio` 在山脉后高度上求海平面，并重塑低地深度。 |
+| `ocean_reshape` | 根据连通海洋掩码重塑海洋深度；小低洼区抬升为陆地，海洋离岸越远越深。 |
 
 大陆基础高度：
 
@@ -595,7 +604,7 @@ sample_count = 4 x 4 = 16
 | `moisture` | 样本湿度平均值。 |
 | `river_strength` | 样本河流强度平均值。 |
 | `has_river` | `river_strength > 0.08` 或骨架索引中存在河流。 |
-| `biome` | 样本中出现次数最多的 biome。 |
+| `biome` | 样本中出现次数最多的 biome；如果海洋阶段后的水域样本超过半数，则强制为 `ocean`。 |
 | `terrain_tags` | 根据 biome 推导出的标签。 |
 
 `terrain_tags` 当前推导规则：

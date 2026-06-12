@@ -3,6 +3,8 @@ extends RefCounted
 
 const MIN_HEIGHT := -256
 const MAX_HEIGHT := 256
+const SHALLOW_LAND_HEIGHT_ABOVE_SEA := 4
+const MAX_OCEAN_DEPTH_BONUS := 64
 
 static func hash01(seed: int, salt: int, x: int, y: int) -> float:
 	var n := int(seed) ^ int(salt * 1442695041) ^ int(x * 374761393) ^ int(y * 668265263)
@@ -24,8 +26,7 @@ static func tile_height(config, skeleton, tile: Vector2i) -> int:
 	return sample_layered_height(config.seed, skeleton, int(point.x), int(point.y))
 
 static func is_ocean_tile(config, skeleton, tile: Vector2i) -> bool:
-	var point: Vector2 = tile_center(config, tile)
-	return sample_height_after_mountains(config.seed, skeleton, int(point.x), int(point.y)) < skeleton.sea_level
+	return skeleton.ocean_tiles.has(tile_coord_key(tile))
 
 static func sample_base_height(seed: int, skeleton, world_x: int, world_y: int) -> float:
 	var world_size := float(skeleton.big_map_size * skeleton.sub_map_size)
@@ -42,10 +43,26 @@ static func sample_base_height(seed: int, skeleton, world_x: int, world_y: int) 
 
 static func sample_layered_height(seed: int, skeleton, world_x: int, world_y: int) -> int:
 	var height_after_mountains: int = sample_height_after_mountains(seed, skeleton, world_x, world_y)
-	if height_after_mountains >= skeleton.sea_level:
+	if not is_ocean_world_point(skeleton, world_x, world_y):
+		if height_after_mountains < skeleton.sea_level:
+			return clampi(skeleton.sea_level + SHALLOW_LAND_HEIGHT_ABOVE_SEA, MIN_HEIGHT, MAX_HEIGHT)
 		return height_after_mountains
 	var depth := clampf(float(skeleton.sea_level - height_after_mountains) / 180.0, 0.0, 1.0)
-	return clampi(min(height_after_mountains, skeleton.sea_level - 4 - int(round(pow(depth, 1.35) * 96.0))), MIN_HEIGHT, MAX_HEIGHT)
+	var distance_depth := clampf(float(ocean_distance(skeleton, world_x, world_y)) / 8.0, 0.0, 1.0)
+	var depth_bonus := int(round(distance_depth * float(MAX_OCEAN_DEPTH_BONUS)))
+	return clampi(min(height_after_mountains, skeleton.sea_level - 4 - int(round(pow(depth, 1.35) * 48.0)) - depth_bonus), MIN_HEIGHT, MAX_HEIGHT)
+
+static func is_ocean_world_point(skeleton, world_x: int, world_y: int) -> bool:
+	if skeleton == null or skeleton.ocean_tiles.is_empty():
+		return false
+	var tile_x: int = int(floor(float(world_x) / float(maxi(1, skeleton.sub_map_size))))
+	var tile_y: int = int(floor(float(world_y) / float(maxi(1, skeleton.sub_map_size))))
+	return skeleton.ocean_tiles.has("%d:%d" % [tile_x, tile_y])
+
+static func ocean_distance(skeleton, world_x: int, world_y: int) -> int:
+	var tile_x: int = int(floor(float(world_x) / float(maxi(1, skeleton.sub_map_size))))
+	var tile_y: int = int(floor(float(world_y) / float(maxi(1, skeleton.sub_map_size))))
+	return int(skeleton.ocean_distance_by_tile.get("%d:%d" % [tile_x, tile_y], 0))
 
 static func sample_height_after_mountains(seed: int, skeleton, world_x: int, world_y: int) -> int:
 	return clampi(

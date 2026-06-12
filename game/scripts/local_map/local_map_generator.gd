@@ -68,6 +68,8 @@ func _prepare_sampler_for_tile(tile) -> void:
 	local_skeleton.sub_map_size = skeleton.sub_map_size
 	local_skeleton.sea_level = skeleton.sea_level
 	local_skeleton.continent_bias = skeleton.continent_bias
+	local_skeleton.ocean_tiles = skeleton.ocean_tiles
+	local_skeleton.ocean_distance_by_tile = skeleton.ocean_distance_by_tile
 	local_skeleton.mountain_ridges = _filter_structures_for_tile(tile, skeleton.mountain_ridges)
 	local_skeleton.rivers = _filter_structures_for_tile(tile, skeleton.rivers)
 	sampler = WorldFunctionSamplerScript.new(local_skeleton)
@@ -414,11 +416,12 @@ func _carve_river_at(state, center_x: int, center_y: int, width: float, depth: f
 
 func _derive_flags_and_slopes(state) -> void:
 	var total = 0
+	var is_ocean_tile := skeleton.ocean_tiles.has(state.tile_key)
 	for y in range(state.height):
 		for x in range(state.width):
 			var index = state.index(x, y)
 			var height = state.heights[index]
-			state.water_flags[index] = 1 if height < SEA_LEVEL else 0
+			state.water_flags[index] = 1 if is_ocean_tile and height < skeleton.sea_level else 0
 			state.slope_values[index] = _slope_at(state, x, y)
 			total += height
 	state.average_height = int(round(float(total) / float(state.width * state.height)))

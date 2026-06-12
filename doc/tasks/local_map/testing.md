@@ -21,17 +21,26 @@
 
 ## 边界连续性测试
 
-相邻地块边界高度必须连续：
+相邻地块边界高度应保持视觉连续，但不再要求复用同一个全局采样坐标。小地图现在使用 `tile_col * sub_map_size + cell_x` / `tile_row * sub_map_size + cell_y`，优先保证小地图严格归属于对应大地图地块，避免采样到相邻地块的海洋掩码。
 
-- A 地块右边界等于 B 地块左边界
-- A 地块下边界等于 C 地块上边界
+- A 地块右边界与 B 地块左边界高度差应在可接受范围内
+- A 地块下边界与 C 地块上边界高度差应在可接受范围内
+- 大地图陆地地块的小地图不应因为相邻海洋地块而大面积显示水域
 
 验证方式：
 
 ```text
-east_tile.cell(sub_map_size - 1, y).height == west_neighbor.cell(0, y).height
-south_tile.cell(x, sub_map_size - 1).height == north_neighbor.cell(x, 0).height
+abs(east_tile.cell(sub_map_size - 1, y).height - west_neighbor.cell(0, y).height) <= allowed_delta
+abs(south_tile.cell(x, sub_map_size - 1).height - north_neighbor.cell(x, 0).height) <= allowed_delta
 ```
+
+## 水域一致性测试
+
+大地图和小地图的海洋判定必须一致：
+
+- 大地图非海洋地块的小地图 `water_flags` 不应大面积为 `1`。
+- 大地图海洋地块的小地图可以显示水域主体。
+- 如果小地图水域样本超过半数，大地图摘要应显示为 `ocean` 或包含 `water` 标签。
 
 ## 河流连续性测试
 
