@@ -23,6 +23,7 @@ var height: int
 var heights: PackedInt32Array
 var water_flags: PackedByteArray
 var river_flags: PackedByteArray
+var terrain_flags: PackedInt32Array
 var slope_values: PackedInt32Array
 var river_carve_points: Array
 var average_height: int
@@ -35,11 +36,12 @@ var average_height: int
 - 一维索引：`index = y * width + x`
 - `water_flags`、`river_flags` 使用紧凑数组表达派生状态
 - `water_flags` 只表示与大地图海洋掩码一致的水域：当前大地图地块属于 `skeleton.ocean_tiles`，且地格高度低于 `skeleton.sea_level`
+- `terrain_flags` 使用 bitmask 表示多地貌标签：草地、森林、湿地、岩石、沙地、雪地
 - `river_carve_points` 保存已生成河段的切割点、宽度和深度，不保存完整世界级河流切割图层
 
 ### `LocalCellState`
 
-`LocalCellState` 不建议作为所有地格常驻对象。它更适合作为查询某个地格时临时组装的视图对象。
+`LocalCellState` 不建议作为所有地格常驻对象。它更适合作为查询某个地格时临时组装的视图对象。代码中由 `LocalMapState` 通过 preload 脚本引用创建，避免依赖 Godot 全局 `class_name` 注册顺序。
 
 建议字段：
 
@@ -48,9 +50,12 @@ class_name LocalCellState
 
 var x: int
 var y: int
+var global_x: int
+var global_y: int
 var height: int
 var is_water: bool
 var has_river: bool
+var terrain_flags: int
 var slope: int
 ```
 
@@ -83,6 +88,7 @@ user://local_maps/{seed}/v{version}/{tile_key}.bin
 - 高度数组
 - 水体派生结果
 - 河流派生结果
+- 地貌 bitmask 派生结果
 - 坡度派生结果
 - 河流切割点、宽度和深度
 - 平均高度
@@ -116,12 +122,13 @@ config_hash: string
 ## Checklist
 
 - [x] 设计 `LocalMapState`
-- [ ] 设计临时查询用 `LocalCellState`
+- [x] 设计临时查询用 `LocalCellState`
 - [x] 设计一维索引规则
 - [x] 设计缓存路径规则
 - [x] 设计缓存版本字段
 - [ ] 设计生成配置摘要字段
 - [x] 设计高度数组存储格式
 - [x] 设计 water/river/slope 派生数组
+- [x] 设计 terrain_flags bitmask 派生数组
 - [x] 设计版本不兼容处理流程
 - [x] 设计缓存读写接口

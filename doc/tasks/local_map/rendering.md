@@ -28,12 +28,12 @@ game/scripts/local_map/local_map_root.gd
 每个地格 1 像素，生成 `ImageTexture` 后用 `TextureRect` 放大显示
 ```
 
-渲染结果是 `sub_map_size x sub_map_size` 高度图：
+渲染结果是 `sub_map_size x sub_map_size` 地貌图：
 
-- 高度越高颜色越亮
 - `water_flags` 显示为水色
 - 河流地格显示为更亮或更饱和的蓝色
-- 山脉或高坡区域用灰白色表达
+- 陆地优先按 `terrain_flags` 显示雪地、湿地、森林、岩石、沙地、草地
+- 如果旧缓存缺少 `terrain_flags`，回退到高度颜色
 
 当前已支持缩放和拖拽；如果后续需要更高保真，再考虑每地格多像素渲染。
 
@@ -42,6 +42,7 @@ game/scripts/local_map/local_map_root.gd
 - `LocalMapState.heights`
 - `LocalMapState.water_flags`
 - `LocalMapState.river_flags`
+- `LocalMapState.terrain_flags`
 - `LocalMapState.slope_values`
 
 ## 交互
@@ -75,7 +76,7 @@ game/scripts/local_map/local_map_root.gd
 - [x] 设计高度到颜色的映射
 - [x] 设计水体颜色规则
 - [x] 设计河流颜色规则
-- [ ] 设计山地/高坡颜色规则
+- [x] 设计地貌标签颜色规则
 - [x] 设计 `ImageTexture` 生成流程
 - [x] 设计返回大地图按钮
 - [x] 设计保留大地图相机状态

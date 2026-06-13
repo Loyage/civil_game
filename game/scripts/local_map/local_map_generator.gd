@@ -44,6 +44,7 @@ func generate(tile):
 	_generate_heights(state, tile)
 	_apply_river(state, tile)
 	_derive_flags_and_slopes(state)
+	_derive_terrain_flags(state, tile)
 	return state
 
 func _generate_heights(state, tile) -> void:
@@ -466,6 +467,103 @@ func _derive_flags_and_slopes(state) -> void:
 			state.slope_values[index] = _slope_at(state, x, y)
 			total += height
 	state.average_height = int(round(float(total) / float(state.width * state.height)))
+
+func _derive_terrain_flags(state, tile) -> void:
+	var initial_flags: PackedInt32Array = PackedInt32Array()
+	initial_flags.resize(state.width * state.height)
+	for y in range(state.height):
+		for x in range(state.width):
+			var index: int = state.index(x, y)
+			initial_flags[index] = _initial_terrain_flags(state, tile, x, y)
+
+	for y in range(state.height):
+		for x in range(state.width):
+			var index: int = state.index(x, y)
+			if state.water_flags[index] == 1:
+				state.terrain_flags[index] = 0
+				continue
+			var flags: int = initial_flags[index]
+			flags = _smooth_terrain_flag(initial_flags, state, x, y, flags, LocalMapStateScript.TERRAIN_FOREST)
+			flags = _smooth_terrain_flag(initial_flags, state, x, y, flags, LocalMapStateScript.TERRAIN_WETLAND)
+			flags = _smooth_terrain_flag(initial_flags, state, x, y, flags, LocalMapStateScript.TERRAIN_ROCK)
+			flags = _smooth_terrain_flag(initial_flags, state, x, y, flags, LocalMapStateScript.TERRAIN_SAND)
+			flags = _smooth_terrain_flag(initial_flags, state, x, y, flags, LocalMapStateScript.TERRAIN_SNOW)
+			if (flags & (LocalMapStateScript.TERRAIN_SAND | LocalMapStateScript.TERRAIN_ROCK | LocalMapStateScript.TERRAIN_SNOW)) == 0:
+				flags |= LocalMapStateScript.TERRAIN_GRASS
+			state.terrain_flags[index] = flags
+
+func _initial_terrain_flags(state, tile, x: int, y: int) -> int:
+	var index: int = state.index(x, y)
+	if state.water_flags[index] == 1:
+		return 0
+
+	var global_x: int = state.global_cell_x(x)
+	var global_y: int = state.global_cell_y(y)
+	var height: int = state.heights[index]
+	var slope: int = state.slope_values[index]
+	var moisture: float = sampler.sample_moisture(global_x, global_y)
+	var temperature: float = sampler.sample_temperature(global_x, global_y)
+	var mountain: float = sampler.sample_mountain_influence(global_x, global_y)
+	var block_noise: float = _terrain_noise(801, global_x, global_y, 8)
+	var flags: int = 0
+
+	var biome: String = String(tile.biome)
+	var forest_bias: float = 0.18 if biome in ["forest", "rainforest"] else 0.0
+	if moisture + forest_bias > 0.62 and height >= skeleton.sea_level + 4 and height < 150 and block_noise > 0.28:
+		flags |= LocalMapStateScript.TERRAIN_FOREST
+
+	if _near_water_or_river(state, x, y, 3) and height < skeleton.sea_level + 36 and moisture > 0.42:
+		flags |= LocalMapStateScript.TERRAIN_WETLAND
+
+	if slope >= 42 or height >= 152 or mountain > 0.42:
+		flags |= LocalMapStateScript.TERRAIN_ROCK
+
+	if moisture < 0.26 and temperature > 0.56 and height >= skeleton.sea_level + 4:
+		flags |= LocalMapStateScript.TERRAIN_SAND
+
+	if height >= 210 or (temperature < 0.18 and height >= 96):
+		flags |= LocalMapStateScript.TERRAIN_SNOW
+
+	return flags
+
+func _smooth_terrain_flag(initial_flags: PackedInt32Array, state, x: int, y: int, flags: int, flag: int) -> int:
+	var count: int = 0
+	for dy in range(-1, 2):
+		for dx in range(-1, 2):
+			var nx: int = x + dx
+			var ny: int = y + dy
+			if not state.is_valid_cell(nx, ny):
+				continue
+			if (initial_flags[state.index(nx, ny)] & flag) != 0:
+				count += 1
+	if count >= 4:
+		return flags | flag
+	if count <= 1:
+		return flags & ~flag
+	return flags
+
+func _near_water_or_river(state, x: int, y: int, radius: int) -> bool:
+	for dy in range(-radius, radius + 1):
+		for dx in range(-radius, radius + 1):
+			if Vector2(dx, dy).length() > float(radius):
+				continue
+			var nx: int = x + dx
+			var ny: int = y + dy
+			if not state.is_valid_cell(nx, ny):
+				continue
+			var index: int = state.index(nx, ny)
+			if state.water_flags[index] == 1 or state.river_flags[index] == 1:
+				return true
+	return false
+
+func _terrain_noise(salt: int, global_x: int, global_y: int, scale: int) -> float:
+	return _hash01(salt, int(floor(float(global_x) / float(scale))), int(floor(float(global_y) / float(scale))))
+
+func _hash01(salt: int, x: int, y: int) -> float:
+	var n: int = int(world_seed) ^ int(salt * 1442695041) ^ int(x * 374761393) ^ int(y * 668265263)
+	n = (n ^ (n >> 13)) * 1274126177
+	n = n ^ (n >> 16)
+	return float(n & 0xffff) / 65535.0
 
 func _slope_at(state, x: int, y: int) -> int:
 	var center = state.heights[state.index(x, y)]

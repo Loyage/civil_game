@@ -1,7 +1,7 @@
 class_name LocalMapService
 extends RefCounted
 
-const CACHE_VERSION := 7
+const CACHE_VERSION := 8
 const CACHE_MAGIC := "CLM1"
 const CACHE_ROOT := "user://local_maps"
 const MAP_CONFIG_PATH := "res://game/data/maps/map_generation_config.json"
@@ -67,9 +67,10 @@ func _load_cache(tile):
 	state.heights = data.get("heights", PackedInt32Array())
 	state.water_flags = data.get("water_flags", PackedByteArray())
 	state.river_flags = data.get("river_flags", PackedByteArray())
+	state.terrain_flags = data.get("terrain_flags", PackedInt32Array())
 	state.slope_values = data.get("slope_values", PackedInt32Array())
 	state.river_carve_points = data.get("river_carve_points", [])
-	if state.heights.size() != state.width * state.height or state.water_flags.size() != state.heights.size() or state.river_flags.size() != state.heights.size() or state.slope_values.size() != state.heights.size():
+	if state.heights.size() != state.width * state.height or state.water_flags.size() != state.heights.size() or state.river_flags.size() != state.heights.size() or state.terrain_flags.size() != state.heights.size() or state.slope_values.size() != state.heights.size():
 		return null
 
 	return state
@@ -99,6 +100,7 @@ func _write_cache(state) -> void:
 		"heights": state.heights,
 		"water_flags": state.water_flags,
 		"river_flags": state.river_flags,
+		"terrain_flags": state.terrain_flags,
 		"slope_values": state.slope_values,
 		"river_carve_points": state.river_carve_points
 	})

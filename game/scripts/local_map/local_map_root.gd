@@ -70,6 +70,8 @@ func _cell_color(index: int) -> Color:
 		return Color("#2fb8ff")
 	if local_map_state.water_flags[index] == 1:
 		return Color("#2f79b7")
+	if local_map_state.terrain_flags.size() == local_map_state.heights.size():
+		return _terrain_color(int(local_map_state.terrain_flags[index]), int(local_map_state.heights[index]))
 
 	var height: int = local_map_state.heights[index]
 	if height >= 176:
@@ -80,6 +82,22 @@ func _cell_color(index: int) -> Color:
 		return Color("#7a8b55")
 
 	var t = inverse_lerp(0.0, 176.0, float(max(0, height)))
+	return Color("#5f9b4d").lerp(Color("#b9b06e"), t)
+
+func _terrain_color(flags: int, height: int) -> Color:
+	if (flags & LocalMapState.TERRAIN_SNOW) != 0:
+		return Color("#e8edf0")
+	if (flags & LocalMapState.TERRAIN_WETLAND) != 0:
+		return Color("#4f8d77")
+	if (flags & LocalMapState.TERRAIN_FOREST) != 0:
+		return Color("#286f3a")
+	if (flags & LocalMapState.TERRAIN_ROCK) != 0:
+		return Color("#8f8a7f")
+	if (flags & LocalMapState.TERRAIN_SAND) != 0:
+		return Color("#d8bf73")
+	if (flags & LocalMapState.TERRAIN_GRASS) != 0:
+		return Color("#6eaa55")
+	var t: float = inverse_lerp(0.0, 176.0, float(max(0, height)))
 	return Color("#5f9b4d").lerp(Color("#b9b06e"), t)
 
 func _handle_mouse_button(event: InputEventMouseButton) -> void:
@@ -184,18 +202,38 @@ func _cell_from_screen_position(screen_position: Vector2) -> Vector2i:
 	)
 
 func _cell_info(cell: Vector2i) -> Dictionary:
-	var index: int = local_map_state.index(cell.x, cell.y)
+	var cell_state = local_map_state.cell_state_at(cell.x, cell.y)
 	return {
 		"tile_key": local_map_state.tile_key,
-		"x": cell.x,
-		"y": cell.y,
-		"global_x": local_map_state.global_cell_x(cell.x),
-		"global_y": local_map_state.global_cell_y(cell.y),
-		"height": local_map_state.heights[index],
-		"is_water": local_map_state.water_flags[index] == 1,
-		"has_river": local_map_state.river_flags[index] == 1,
-		"slope": local_map_state.slope_values[index]
+		"x": cell_state.x,
+		"y": cell_state.y,
+		"global_x": cell_state.global_x,
+		"global_y": cell_state.global_y,
+		"height": cell_state.height,
+		"is_water": cell_state.is_water,
+		"has_river": cell_state.has_river,
+		"terrain_flags": cell_state.terrain_flags,
+		"terrain_labels": _terrain_text(cell_state.terrain_flags),
+		"slope": cell_state.slope
 	}
+
+func _terrain_text(flags: int) -> String:
+	var labels: Array[String] = []
+	if (flags & LocalMapState.TERRAIN_GRASS) != 0:
+		labels.append("草地")
+	if (flags & LocalMapState.TERRAIN_FOREST) != 0:
+		labels.append("森林")
+	if (flags & LocalMapState.TERRAIN_WETLAND) != 0:
+		labels.append("湿地")
+	if (flags & LocalMapState.TERRAIN_ROCK) != 0:
+		labels.append("岩石")
+	if (flags & LocalMapState.TERRAIN_SAND) != 0:
+		labels.append("沙地")
+	if (flags & LocalMapState.TERRAIN_SNOW) != 0:
+		labels.append("雪地")
+	if labels.is_empty():
+		return "无"
+	return "、".join(labels)
 
 func _update_cell_markers() -> void:
 	_update_marker(hover_marker, hovered_cell)

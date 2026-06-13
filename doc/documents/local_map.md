@@ -11,6 +11,8 @@
 - 小地图高度范围为 `-256..256` 整数。
 - 小地图高度逐地格复用世界生成器的 `WorldSkeletonGenerator + WorldFunctionSampler`，不再使用旧版本地噪声高度场。
 - 水体规则由大地图海洋掩码和海平面共同决定。
+- 小地图地貌使用 `terrain_flags` bitmask 表示，支持草地、森林、湿地、岩石、沙地、雪地多标签。
+- `LocalCellState` 是按需查询用的临时对象，由 `LocalMapState` 通过 preload 脚本引用创建，避免 Godot 全局类注册顺序影响编译。
 - 河流地块会根据大地图粗路径生成地格级细化河道，并按全局 `width_profile` 采样宽度后压低河床。
 - `LocalMapRoot` 用 `ImageTexture` 渲染高度图，避免为每个地格创建节点。
 - `LocalMapRoot` 使用 `CanvasLayer` 固定在屏幕坐标渲染，不受大地图相机平移和缩放影响。
@@ -77,6 +79,17 @@ WorldFunctionSampler.sample_height(global_x, global_y)
 
 `water_flags` 不再只根据 `height < 0` 推导。当前规则是：当前大地图地块必须属于 `skeleton.ocean_tiles`，且地格高度低于 `skeleton.sea_level`，才标记为水域。非海洋大地图地块内部的低洼地会在世界采样阶段被抬升到海平面以上，避免大地图陆地进入后显示为大面积水域。
 
+`terrain_flags` 在高度、水体、河流和坡度派生之后生成。当前规则：
+
+- `grass`：普通非水陆地底层标签。
+- `forest`：湿度高、非水体、低中海拔，并结合大地图 forest/rainforest biome 提高概率。
+- `wetland`：靠近水体或河流，低海拔且湿度足够。
+- `rock`：高坡度、高海拔或山脉影响明显。
+- `sand`：低湿度且温度高。
+- `snow`：极高海拔，或低温且较高海拔。
+
+为了减少椒盐噪点，森林、湿地、岩石、沙地、雪地会经过一次 `3 x 3` 邻域多数过滤。过滤后，普通非水陆地会补上 `grass` 标签。
+
 高度值被限制在：
 
 ```text
@@ -136,14 +149,14 @@ slope = max(abs(center_height - neighbor_height))
 
 ## 缓存版本
 
-本次小地图河流改为按完整全局河流折线裁剪入口/出口，边界河床允许下切，河宽按全局 `width_profile` 采样。缓存版本升级为：
+本次小地图新增 `terrain_flags` 地貌 bitmask，并保留全局河流宽度采样。缓存版本升级为：
 
 ```text
-CACHE_VERSION = 7
-LocalMapState.version = 7
+CACHE_VERSION = 8
+LocalMapState.version = 8
 ```
 
-旧版缓存路径不会被读取，新生成的小地图会写入 `v7` 目录。
+旧版缓存路径不会被读取，新生成的小地图会写入 `v8` 目录。
 
 同一个缓存版本下，缓存读取还会校验 `width` 和 `height` 是否等于当前配置的 `sub_map_size`。如果玩家调整小地图边长，旧尺寸缓存不会被复用，会重新生成对应尺寸的小地图。
 
@@ -158,6 +171,8 @@ LocalMapState.version = 7
 左下角 UI 在小地图模式切换为“地格信息”。进入小地图后默认未选择地格；玩家在小地图视口内左键点击地格后，`LocalMapRoot` 发出 `local_cell_selected(cell_info)`，`CoreRoot` 转发给 `UIRoot`，面板显示地格坐标、全局坐标、高度、水体、河流和坡度。悬停只更新预览标记，不改变面板内容。
 
 `MapGeneratorPreview` 也可以查看小地图。该开发工具入口直接调用 `LocalMapGenerator`，不使用 `LocalMapService`，因此不会读取或写入缓存，适合快速查看当前 seed 和选中大地图地块对应的小地图样式。
+
+在 `MapGeneratorPreview` 中，小地图复用 `View` 下拉框。“特征”视图会按 `terrain_flags` 显示草地、森林、湿地、岩石、沙地和雪地；选中地格时，左侧信息也会显示当前地貌标签。
 
 ## 当前限制
 

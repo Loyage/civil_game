@@ -67,7 +67,10 @@ func show_local_cell(cell_info: Dictionary) -> void:
 	title_label.text = "地格信息"
 	coord_label.text = "地格：%d, %d" % [int(cell_info.get("x", 0)), int(cell_info.get("y", 0))]
 	terrain_label.text = "全局坐标：%d, %d" % [int(cell_info.get("global_x", 0)), int(cell_info.get("global_y", 0))]
-	features_label.text = "所属地块：%s" % String(cell_info.get("tile_key", ""))
+	features_label.text = "所属地块：%s\n地貌：%s" % [
+		String(cell_info.get("tile_key", "")),
+		String(cell_info.get("terrain_labels", "无"))
+	]
 	river_label.text = "水体：%s  河流：%s" % [
 		"是" if bool(cell_info.get("is_water", false)) else "否",
 		"是" if bool(cell_info.get("has_river", false)) else "否"

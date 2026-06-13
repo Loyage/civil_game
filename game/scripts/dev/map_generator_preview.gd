@@ -5,6 +5,7 @@ const MapGenerationConfigScript := preload("res://game/scripts/map_generation/ma
 const PreviewTaskScript := preload("res://game/scripts/map_generation/map_generation_preview_task.gd")
 const PipelineResultScript := preload("res://game/scripts/map_generation/map_generation_pipeline_result.gd")
 const LocalMapGeneratorScript := preload("res://game/scripts/local_map/local_map_generator.gd")
+const LocalMapStateScript := preload("res://game/scripts/local_map/local_map_state.gd")
 
 const VIEW_TERRAIN := 0
 const VIEW_ELEVATION := 1
@@ -269,6 +270,8 @@ func _local_cell_color(index: int) -> Color:
 	var view_id = view_mode_button.get_selected_id()
 	if view_id == VIEW_ELEVATION:
 		return _elevation_color(int(local_map_state.heights[index]), local_elevation_min, local_elevation_max)
+	if view_id == VIEW_FEATURES:
+		return _local_terrain_color(index)
 
 	if local_map_state.river_flags[index] == 1:
 		return Color("#2fb8ff")
@@ -285,6 +288,28 @@ func _local_cell_color(index: int) -> Color:
 
 	var t = inverse_lerp(0.0, 176.0, float(max(0, height)))
 	return Color("#5f9b4d").lerp(Color("#b9b06e"), t)
+
+func _local_terrain_color(index: int) -> Color:
+	if local_map_state.river_flags[index] == 1:
+		return Color("#2fb8ff")
+	if local_map_state.water_flags[index] == 1:
+		return Color("#2f79b7")
+	if local_map_state.terrain_flags.size() != local_map_state.heights.size():
+		return Color("#444444")
+	var flags: int = int(local_map_state.terrain_flags[index])
+	if (flags & LocalMapStateScript.TERRAIN_SNOW) != 0:
+		return Color("#e8edf0")
+	if (flags & LocalMapStateScript.TERRAIN_WETLAND) != 0:
+		return Color("#4f8d77")
+	if (flags & LocalMapStateScript.TERRAIN_FOREST) != 0:
+		return Color("#286f3a")
+	if (flags & LocalMapStateScript.TERRAIN_ROCK) != 0:
+		return Color("#8f8a7f")
+	if (flags & LocalMapStateScript.TERRAIN_SAND) != 0:
+		return Color("#d8bf73")
+	if (flags & LocalMapStateScript.TERRAIN_GRASS) != 0:
+		return Color("#6eaa55")
+	return Color("#444444")
 
 func _tile_color(tile, view_id: int) -> Color:
 	match view_id:
@@ -807,7 +832,7 @@ func _show_empty_cell_info(tile_key: String) -> void:
 
 func _show_cell_info(cell: Vector2i) -> void:
 	var index: int = local_map_state.index(cell.x, cell.y)
-	tile_info_label.text = "小地图：%s\n地格：%d, %d\n全局坐标：%d, %d\n高度 %d  坡度 %d\n水体：%s  河流：%s" % [
+	tile_info_label.text = "小地图：%s\n地格：%d, %d\n全局坐标：%d, %d\n高度 %d  坡度 %d\n水体：%s  河流：%s\n地貌：%s" % [
 		local_map_state.tile_key,
 		cell.x,
 		cell.y,
@@ -816,5 +841,27 @@ func _show_cell_info(cell: Vector2i) -> void:
 		local_map_state.heights[index],
 		local_map_state.slope_values[index],
 		"是" if local_map_state.water_flags[index] == 1 else "否",
-		"是" if local_map_state.river_flags[index] == 1 else "否"
+		"是" if local_map_state.river_flags[index] == 1 else "否",
+		_local_terrain_text(index)
 	]
+
+func _local_terrain_text(index: int) -> String:
+	if local_map_state.terrain_flags.size() != local_map_state.heights.size():
+		return "无"
+	var flags: int = int(local_map_state.terrain_flags[index])
+	var labels: Array[String] = []
+	if (flags & LocalMapStateScript.TERRAIN_GRASS) != 0:
+		labels.append("草地")
+	if (flags & LocalMapStateScript.TERRAIN_FOREST) != 0:
+		labels.append("森林")
+	if (flags & LocalMapStateScript.TERRAIN_WETLAND) != 0:
+		labels.append("湿地")
+	if (flags & LocalMapStateScript.TERRAIN_ROCK) != 0:
+		labels.append("岩石")
+	if (flags & LocalMapStateScript.TERRAIN_SAND) != 0:
+		labels.append("沙地")
+	if (flags & LocalMapStateScript.TERRAIN_SNOW) != 0:
+		labels.append("雪地")
+	if labels.is_empty():
+		return "无"
+	return "、".join(labels)

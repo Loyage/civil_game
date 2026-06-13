@@ -73,6 +73,21 @@ global_cell_y = tile_row * sub_map_size + cell_y
 6. 河流约束根据大地图粗路径生成小地图地格级细化路径，并按动态宽度/深度压低河床高度。
 7. 水体由大地图海洋掩码和海平面共同派生，不再只看 `height < 0`。
 8. 坡度按周围 8 邻域最大高度差派生。
+9. 地貌标签写入 `terrain_flags` bitmask，支持草地、森林、湿地、岩石、沙地、雪地多标签。
+10. 森林、湿地、岩石、沙地、雪地会执行一次 `3 x 3` 邻域多数过滤，减少椒盐噪点。
+
+## 地貌标签生成
+
+`terrain_flags` 当前是 `PackedInt32Array`，每个地格用 bitmask 表达多个标签：
+
+- `grass`：普通非水陆地底层标签。
+- `forest`：湿度高、非水体、低中海拔，并结合大地图 forest/rainforest biome 提高概率。
+- `wetland`：靠近水体或河流，低海拔且湿度足够。
+- `rock`：高坡度、高海拔或山脉影响明显。
+- `sand`：低湿度且温度高。
+- `snow`：极高海拔，或低温且较高海拔。
+
+地貌派生只生成数据和基础颜色，不生成资源。
 
 ## 河流生成
 
@@ -134,6 +149,7 @@ tile in skeleton.ocean_tiles and height < skeleton.sea_level => water
 - [x] 设计小地图河流寻路成本
 - [x] 设计河床压低规则
 - [x] 设计水体派生规则
+- [x] 设计地貌 bitmask 派生规则
 - [x] 设计平均高度统计规则
 - [x] 升级小地图缓存版本
 - [x] 设计大地图粗路径到小地图细化路径的输入输出
@@ -142,3 +158,5 @@ tile in skeleton.ocean_tiles and height < skeleton.sea_level => water
 - [x] 设计河流切割后的缓存版本升级
 - [x] 实现按完整全局河流折线裁剪小地图河段
 - [x] 实现边界河床下切以保证河流跨地块连续
+- [x] 实现草地 / 森林 / 湿地 / 岩石 / 沙地 / 雪地地貌标签
+- [x] 实现地貌块状连贯过滤
