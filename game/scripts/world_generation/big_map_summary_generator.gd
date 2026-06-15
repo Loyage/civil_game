@@ -7,15 +7,17 @@ const MapStateScript := preload("res://game/scripts/map/map_state.gd")
 const TileStateScript := preload("res://game/scripts/map/tile_state.gd")
 const WorldFunctionSamplerScript := preload("res://game/scripts/world_generation/world_function_sampler.gd")
 const PipelineResultScript := preload("res://game/scripts/map_generation/map_generation_pipeline_result.gd")
+const WorldResourceGeneratorScript := preload("res://game/scripts/resources/world_resource_generator.gd")
 
 func generate(config, skeleton, stage_id: String = PipelineResultScript.STAGE_FINAL):
 	var map_state = MapStateScript.new(config.big_map_size, config.big_map_size)
 	map_state.world_seed = config.seed
 	map_state.start_city_name = config.start_city_name
 	var sampler = WorldFunctionSamplerScript.new(skeleton)
+	var resource_generator = WorldResourceGeneratorScript.new()
 	for row in range(config.big_map_size):
 		for col in range(config.big_map_size):
-			var tile = _generate_tile_summary(config, skeleton, sampler, col, row, stage_id)
+			var tile = _generate_tile_summary(config, skeleton, sampler, resource_generator, col, row, stage_id)
 			tile.is_city_center = col == config.start_city_col and row == config.start_city_row
 			if tile.is_city_center:
 				tile.owner_city_id = "player_capital"
@@ -28,11 +30,12 @@ func generate_async(owner: Node, config, skeleton, stage_id: String, progress_ca
 	map_state.world_seed = config.seed
 	map_state.start_city_name = config.start_city_name
 	var sampler = WorldFunctionSamplerScript.new(skeleton)
+	var resource_generator = WorldResourceGeneratorScript.new()
 	for row in range(config.big_map_size):
 		if cancel_callback.is_valid() and bool(cancel_callback.call()):
 			return null
 		for col in range(config.big_map_size):
-			var tile = _generate_tile_summary(config, skeleton, sampler, col, row, stage_id)
+			var tile = _generate_tile_summary(config, skeleton, sampler, resource_generator, col, row, stage_id)
 			tile.is_city_center = col == config.start_city_col and row == config.start_city_row
 			if tile.is_city_center:
 				tile.owner_city_id = "player_capital"
@@ -43,7 +46,7 @@ func generate_async(owner: Node, config, skeleton, stage_id: String, progress_ca
 		await owner.get_tree().process_frame
 	return map_state
 
-func _generate_tile_summary(config, skeleton, sampler, col: int, row: int, stage_id: String):
+func _generate_tile_summary(config, skeleton, sampler, resource_generator, col: int, row: int, stage_id: String):
 	var offset = OffsetCoordScript.new(col, row)
 	var tile = TileStateScript.new(GridLayoutScript.tile_key(col, row), offset)
 	var heights: Array[int] = []
@@ -88,6 +91,8 @@ func _generate_tile_summary(config, skeleton, sampler, col: int, row: int, stage
 		_apply_river_summary(skeleton, tile)
 	if _stage_includes_rivers(stage_id):
 		_apply_lake_summary(skeleton, tile)
+	if _stage_includes_resources(stage_id):
+		resource_generator.apply_to_tile(tile, config.seed)
 	return tile
 
 func _sample_stage_height(sampler, world_x: int, world_y: int, stage_id: String) -> int:
@@ -161,6 +166,7 @@ func _stage_includes_mountains(stage_id: String) -> bool:
 		PipelineResultScript.STAGE_OCEAN,
 		PipelineResultScript.STAGE_RIVERS,
 		PipelineResultScript.STAGE_ENVIRONMENT,
+		PipelineResultScript.STAGE_RESOURCES,
 		PipelineResultScript.STAGE_FINAL
 	]
 
@@ -168,6 +174,7 @@ func _stage_includes_rivers(stage_id: String) -> bool:
 	return stage_id in [
 		PipelineResultScript.STAGE_RIVERS,
 		PipelineResultScript.STAGE_ENVIRONMENT,
+		PipelineResultScript.STAGE_RESOURCES,
 		PipelineResultScript.STAGE_FINAL
 	]
 
@@ -176,6 +183,13 @@ func _stage_includes_ocean(stage_id: String) -> bool:
 		PipelineResultScript.STAGE_OCEAN,
 		PipelineResultScript.STAGE_RIVERS,
 		PipelineResultScript.STAGE_ENVIRONMENT,
+		PipelineResultScript.STAGE_RESOURCES,
+		PipelineResultScript.STAGE_FINAL
+	]
+
+func _stage_includes_resources(stage_id: String) -> bool:
+	return stage_id in [
+		PipelineResultScript.STAGE_RESOURCES,
 		PipelineResultScript.STAGE_FINAL
 	]
 

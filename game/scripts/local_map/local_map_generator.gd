@@ -6,6 +6,7 @@ const MapGenerationConfigScript := preload("res://game/scripts/map_generation/ma
 const WorldSkeletonScript := preload("res://game/scripts/world_generation/world_skeleton.gd")
 const WorldSkeletonGeneratorScript := preload("res://game/scripts/world_generation/world_skeleton_generator.gd")
 const WorldFunctionSamplerScript := preload("res://game/scripts/world_generation/world_function_sampler.gd")
+const LocalResourceGeneratorScript := preload("res://game/scripts/resources/local_resource_generator.gd")
 
 const SEA_LEVEL := 0
 const MIN_HEIGHT := -256
@@ -45,6 +46,7 @@ func generate(tile):
 	_apply_river(state, tile)
 	_derive_flags_and_slopes(state)
 	_derive_terrain_flags(state, tile)
+	LocalResourceGeneratorScript.new().apply_to_local_map(state, tile, world_seed)
 	return state
 
 func _generate_heights(state, tile) -> void:

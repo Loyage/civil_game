@@ -59,6 +59,7 @@ var owned_tile_count: int
 class_name TileInfoViewData
 
 var terrain_name: String
+var resources_text: String
 var yields_text: String
 var owner_city_name: String
 var flags_text: String

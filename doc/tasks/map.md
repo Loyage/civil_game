@@ -129,8 +129,9 @@ var tiles_by_key: Dictionary
 5. 根据采样结果创建 `MapState` 和 `TileState` 集合。
 6. 为河流生成地块内部归一化路径点。
 7. 为山脉生成地块内部归一化脊线路径点。
-8. 将完整生成结果写入 `generated_output_path`。
-9. 将 `MapState` 交给渲染层显示。
+8. 在资源阶段生成 `resource_ids`。
+9. 将完整生成结果写入 `generated_output_path`。
+10. 将 `MapState` 交给渲染层显示。
 
 ### 地图渲染流程
 

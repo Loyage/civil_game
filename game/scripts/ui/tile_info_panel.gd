@@ -1,6 +1,8 @@
 class_name TileInfoPanel
 extends PanelContainer
 
+const ResourceDefinitionCatalogScript := preload("res://game/scripts/resources/resource_definition_catalog.gd")
+
 const TERRAIN_NAMES := {
 	"grassland": "草地",
 	"plain": "平原",
@@ -30,14 +32,17 @@ const FEATURE_NAMES := {
 @onready var river_label: Label = %RiverLabel
 @onready var environment_label: Label = %EnvironmentLabel
 
+var resource_catalog
+
 func _ready() -> void:
+	resource_catalog = ResourceDefinitionCatalogScript.new()
 	_apply_panel_style()
 
 func show_tile(tile) -> void:
 	title_label.text = "地块信息"
 	coord_label.text = "坐标：%d, %d" % [tile.offset.col, tile.offset.row]
 	terrain_label.text = "生物群系：%s" % TERRAIN_NAMES.get(tile.biome, tile.biome)
-	features_label.text = "标签：%s" % _feature_text(tile.terrain_tags)
+	features_label.text = "标签：%s\n资源：%s" % [_feature_text(tile.terrain_tags), resource_catalog.display_names(tile.resource_ids)]
 	river_label.text = "河流：%s" % _river_text(tile)
 	environment_label.text = "海拔 %d  最低 %d  最高 %d\n温度 %.2f  湿度 %.2f" % [
 		tile.elevation,
@@ -67,9 +72,10 @@ func show_local_cell(cell_info: Dictionary) -> void:
 	title_label.text = "地格信息"
 	coord_label.text = "地格：%d, %d" % [int(cell_info.get("x", 0)), int(cell_info.get("y", 0))]
 	terrain_label.text = "全局坐标：%d, %d" % [int(cell_info.get("global_x", 0)), int(cell_info.get("global_y", 0))]
-	features_label.text = "所属地块：%s\n地貌：%s" % [
+	features_label.text = "所属地块：%s\n地貌：%s\n资源：%s" % [
 		String(cell_info.get("tile_key", "")),
-		String(cell_info.get("terrain_labels", "无"))
+		String(cell_info.get("terrain_labels", "无")),
+		String(cell_info.get("resource_labels", "无"))
 	]
 	river_label.text = "水体：%s  河流：%s" % [
 		"是" if bool(cell_info.get("is_water", false)) else "否",

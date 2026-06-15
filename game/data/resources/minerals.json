@@ -1,0 +1,35 @@
+[
+	{
+		"id": "gold",
+		"name": "金矿",
+		"category": "mineral",
+		"allowed_biomes": ["mountain", "snow_mountain", "hill"],
+		"allowed_terrain_flags": ["rock"],
+		"spawn_chance": 0.04,
+		"min_cells": 2,
+		"max_cells": 5,
+		"color": "#f0c84b"
+	},
+	{
+		"id": "iron",
+		"name": "铁矿",
+		"category": "mineral",
+		"allowed_biomes": ["mountain", "snow_mountain", "hill"],
+		"allowed_terrain_flags": ["rock"],
+		"spawn_chance": 0.08,
+		"min_cells": 2,
+		"max_cells": 5,
+		"color": "#9a8f82"
+	},
+	{
+		"id": "copper",
+		"name": "铜矿",
+		"category": "mineral",
+		"allowed_biomes": ["mountain", "hill", "desert"],
+		"allowed_terrain_flags": ["rock", "sand"],
+		"spawn_chance": 0.08,
+		"min_cells": 2,
+		"max_cells": 5,
+		"color": "#c47b43"
+	}
+]

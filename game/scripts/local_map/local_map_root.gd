@@ -4,6 +4,8 @@ extends CanvasLayer
 signal return_to_world_requested
 signal local_cell_selected(cell_info)
 
+const ResourceDefinitionCatalogScript := preload("res://game/scripts/resources/resource_definition_catalog.gd")
+
 const MIN_ZOOM := 0.5
 const MAX_ZOOM := 8.0
 const ZOOM_STEP := 1.10
@@ -22,8 +24,10 @@ var pan_offset := Vector2.ZERO
 var is_panning := false
 var selected_cell := Vector2i(-1, -1)
 var hovered_cell := Vector2i(-1, -1)
+var resource_catalog
 
 func _ready() -> void:
+	resource_catalog = ResourceDefinitionCatalogScript.new()
 	visible = false
 	root.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	map_viewport.resized.connect(_apply_view_transform)
@@ -66,6 +70,9 @@ func _render() -> void:
 	map_texture.size = BASE_MAP_DISPLAY_SIZE
 
 func _cell_color(index: int) -> Color:
+	var resource_id: String = _first_resource_id_at_index(index)
+	if resource_id != "":
+		return resource_catalog.color(resource_id)
 	if local_map_state.river_flags[index] == 1:
 		return Color("#2fb8ff")
 	if local_map_state.water_flags[index] == 1:
@@ -214,8 +221,27 @@ func _cell_info(cell: Vector2i) -> Dictionary:
 		"has_river": cell_state.has_river,
 		"terrain_flags": cell_state.terrain_flags,
 		"terrain_labels": _terrain_text(cell_state.terrain_flags),
+		"resource_labels": _resource_text(cell_state.resources),
 		"slope": cell_state.slope
 	}
+
+func _first_resource_id_at_index(index: int) -> String:
+	if local_map_state == null:
+		return ""
+	var x: int = index % local_map_state.width
+	var y: int = int(index / local_map_state.width)
+	var resources: Array = local_map_state.resources_at(x, y)
+	if resources.is_empty():
+		return ""
+	return String(resources[0].get("resource_id", ""))
+
+func _resource_text(resources: Array) -> String:
+	if resources.is_empty():
+		return "无"
+	var labels: Array[String] = []
+	for resource in resources:
+		labels.append(resource_catalog.display_name(String(resource.get("resource_id", ""))))
+	return "、".join(labels)
 
 func _terrain_text(flags: int) -> String:
 	var labels: Array[String] = []

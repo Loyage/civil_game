@@ -1,0 +1,35 @@
+[
+	{
+		"id": "cow",
+		"name": "牛",
+		"category": "animal",
+		"allowed_biomes": ["grassland", "plain"],
+		"allowed_terrain_flags": ["grass"],
+		"spawn_chance": 0.14,
+		"min_count": 1,
+		"max_count": 3,
+		"color": "#b9824a"
+	},
+	{
+		"id": "horse",
+		"name": "马",
+		"category": "animal",
+		"allowed_biomes": ["grassland", "plain", "hill"],
+		"allowed_terrain_flags": ["grass"],
+		"spawn_chance": 0.12,
+		"min_count": 1,
+		"max_count": 3,
+		"color": "#8b5a35"
+	},
+	{
+		"id": "tiger",
+		"name": "老虎",
+		"category": "animal",
+		"allowed_biomes": ["forest", "rainforest"],
+		"allowed_terrain_flags": ["forest"],
+		"spawn_chance": 0.08,
+		"min_count": 1,
+		"max_count": 3,
+		"color": "#e88f22"
+	}
+]

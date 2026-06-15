@@ -6,6 +6,7 @@ const STAGE_OCEAN := "ocean"
 const STAGE_MOUNTAINS := "mountains"
 const STAGE_RIVERS := "rivers"
 const STAGE_ENVIRONMENT := "environment"
+const STAGE_RESOURCES := "resources"
 const STAGE_FINAL := "final"
 
 const STAGE_ORDER := [
@@ -14,6 +15,7 @@ const STAGE_ORDER := [
 	STAGE_OCEAN,
 	STAGE_RIVERS,
 	STAGE_ENVIRONMENT,
+	STAGE_RESOURCES,
 	STAGE_FINAL
 ]
 
@@ -30,6 +32,7 @@ func _init() -> void:
 		STAGE_MOUNTAINS: "山脉",
 		STAGE_RIVERS: "河流",
 		STAGE_ENVIRONMENT: "环境",
+		STAGE_RESOURCES: "资源",
 		STAGE_FINAL: "最终地貌"
 	}
 

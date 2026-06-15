@@ -24,7 +24,8 @@ func write_generated_map(config, map_state) -> void:
 			"river_strength": tile.river_strength,
 			"river_path_points": _serialize_vector2_array(tile.river_path_points),
 			"ridge_path_points": _serialize_vector2_array(tile.ridge_path_points),
-			"terrain_tags": Array(tile.terrain_tags)
+			"terrain_tags": Array(tile.terrain_tags),
+			"resource_ids": Array(tile.resource_ids)
 		})
 
 	file.store_string(JSON.stringify({

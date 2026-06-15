@@ -9,6 +9,7 @@ const MAP_CONFIG_PATH := "res://game/data/maps/map_generation_config.json"
 const MapGenerationConfigScript := preload("res://game/scripts/map_generation/map_generation_config.gd")
 const LocalMapStateScript := preload("res://game/scripts/local_map/local_map_state.gd")
 const LocalMapGeneratorScript := preload("res://game/scripts/local_map/local_map_generator.gd")
+const LocalResourceGeneratorScript := preload("res://game/scripts/resources/local_resource_generator.gd")
 
 var world_seed: int
 var generation_config
@@ -20,6 +21,7 @@ func _init(init_world_seed: int = 0) -> void:
 func load_or_generate(tile):
 	var cached = _load_cache(tile)
 	if cached != null:
+		LocalResourceGeneratorScript.new().apply_to_local_map(cached, tile, world_seed)
 		return cached
 
 	var generator = LocalMapGeneratorScript.new(world_seed, generation_config)

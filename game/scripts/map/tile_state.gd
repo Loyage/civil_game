@@ -16,6 +16,7 @@ var river_strength: float
 var river_path_points: PackedVector2Array
 var ridge_path_points: PackedVector2Array
 var terrain_tags: PackedStringArray
+var resource_ids: PackedStringArray
 var owner_city_id: String
 var is_city_center: bool
 
@@ -39,6 +40,7 @@ func _init(
 	river_path_points = PackedVector2Array()
 	ridge_path_points = PackedVector2Array()
 	terrain_tags = PackedStringArray()
+	resource_ids = PackedStringArray()
 	owner_city_id = ""
 	is_city_center = false
 
@@ -66,3 +68,6 @@ func has_feature(tag_id: String) -> bool:
 func add_feature(tag_id: String) -> void:
 	if not terrain_tags.has(tag_id):
 		terrain_tags.append(tag_id)
+
+func has_resource(resource_id: String) -> bool:
+	return resource_ids.has(resource_id)

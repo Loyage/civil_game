@@ -24,6 +24,7 @@ var river_flags: PackedByteArray
 var terrain_flags: PackedInt32Array
 var slope_values: PackedInt32Array
 var river_carve_points: Array
+var resource_instances: Array
 var average_height: int
 
 func _init() -> void:
@@ -40,6 +41,7 @@ func _init() -> void:
 	terrain_flags = PackedInt32Array()
 	slope_values = PackedInt32Array()
 	river_carve_points = []
+	resource_instances = []
 	average_height = 0
 
 func resize_arrays() -> void:
@@ -76,4 +78,12 @@ func cell_state_at(x: int, y: int):
 	result.is_water = cell_index < water_flags.size() and water_flags[cell_index] == 1
 	result.has_river = cell_index < river_flags.size() and river_flags[cell_index] == 1
 	result.terrain_flags = terrain_flags[cell_index] if cell_index < terrain_flags.size() else 0
+	result.resources = resources_at(x, y)
+	return result
+
+func resources_at(x: int, y: int) -> Array:
+	var result: Array = []
+	for instance in resource_instances:
+		if int(instance.get("x", -1)) == x and int(instance.get("y", -1)) == y:
+			result.append(instance)
 	return result

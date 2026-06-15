@@ -165,6 +165,7 @@ WorldSkeletonGenerator.generate(config)
 - `game/scripts/world_generation/world_ocean_resolver.gd`：按 `ocean_ratio` 解析海平面、连通海洋和离岸距离。
 - `game/scripts/world_generation/world_river_generator.gd`：河流源头选择、入海寻路、汇流和湖泊记录。
 - `game/scripts/world_generation/world_skeleton_tile_indexer.gd`：山脉/河流索引。
+- `game/scripts/resources/world_resource_generator.gd`：最终资源类型生成。
 - `game/scripts/world_generation/world_generation_math.gd`：hash、高度、距离、方向等共用函数。
 
 ### 阶段 3：阶段化累计快照
@@ -182,6 +183,7 @@ WorldSkeletonGenerator.generate(config)
 - 海洋：基础地形 + 山脉 + 海洋
 - 河流：基础地形 + 山脉 + 海洋 + 河流
 - 环境：基础地形 + 山脉 + 海洋 + 河流 + 环境
+- 资源：基础地形 + 山脉 + 海洋 + 河流 + 环境 + 资源
 - 最终地貌
 
 正式游戏继续调用 `MapGenerator.generate(config)`，只取得最终 `MapState`。
@@ -215,6 +217,7 @@ worldY = tileY * subMapSize + localY
 - `river_strength`
 - `biome`
 - `terrain_tags`
+- `resource_ids`
 
 ### 阶段 5：渲染辅助路径
 
@@ -468,7 +471,7 @@ MapGeneratorPreview
 - [x] 实现河流视图和走向视图强制显示河流走向 overlay
 - [x] 实现按 `river_flow` 绘制河流地块内方向箭头
 - [x] 实现阶段化地图生成结果 `MapGenerationPipelineResult`
-- [x] 实现基础地形 / 山脉 / 海洋 / 河流 / 环境 / 最终地貌阶段快照
+- [x] 实现基础地形 / 山脉 / 海洋 / 河流 / 环境 / 资源 / 最终地貌阶段快照
 - [x] 将阶段快照改为显示生成到该步骤为止的累计地图状态
 - [x] 实现预览工具分帧生成任务
 - [x] 实现地图显示区域进度覆盖层
@@ -510,6 +513,7 @@ MapGeneratorPreview
 - [x] 小地图预览支持左键选择地格
 - [x] 小地图预览支持海拔视图
 - [x] 小地图预览支持 terrain_flags 特征视图
+- [x] 大地图和小地图预览支持资源视图
 - [x] 海拔视图使用蓝到红白的热力图
 - [x] 海拔视图显示简要热力图图例
 - [x] 左侧面板显示小地图地格信息

@@ -10,6 +10,7 @@ var slope: int
 var is_water: bool
 var has_river: bool
 var terrain_flags: int
+var resources: Array
 
 func _init() -> void:
 	x = 0
@@ -21,3 +22,4 @@ func _init() -> void:
 	is_water = false
 	has_river = false
 	terrain_flags = 0
+	resources = []

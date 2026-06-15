@@ -33,6 +33,7 @@ game/scripts/local_map/local_map_root.gd
 - `water_flags` 显示为水色
 - 河流地格显示为更亮或更饱和的蓝色
 - 陆地优先按 `terrain_flags` 显示雪地、湿地、森林、岩石、沙地、草地
+- 资源地格优先按资源定义颜色显示
 - 如果旧缓存缺少 `terrain_flags`，回退到高度颜色
 
 当前已支持缩放和拖拽；如果后续需要更高保真，再考虑每地格多像素渲染。
@@ -44,6 +45,7 @@ game/scripts/local_map/local_map_root.gd
 - `LocalMapState.river_flags`
 - `LocalMapState.terrain_flags`
 - `LocalMapState.slope_values`
+- `LocalMapState.resource_instances`
 
 ## 交互
 
@@ -77,6 +79,7 @@ game/scripts/local_map/local_map_root.gd
 - [x] 设计水体颜色规则
 - [x] 设计河流颜色规则
 - [x] 设计地貌标签颜色规则
+- [x] 设计资源颜色规则
 - [x] 设计 `ImageTexture` 生成流程
 - [x] 设计返回大地图按钮
 - [x] 设计保留大地图相机状态

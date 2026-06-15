@@ -6,6 +6,7 @@ const PreviewTaskScript := preload("res://game/scripts/map_generation/map_genera
 const PipelineResultScript := preload("res://game/scripts/map_generation/map_generation_pipeline_result.gd")
 const LocalMapGeneratorScript := preload("res://game/scripts/local_map/local_map_generator.gd")
 const LocalMapStateScript := preload("res://game/scripts/local_map/local_map_state.gd")
+const ResourceDefinitionCatalogScript := preload("res://game/scripts/resources/resource_definition_catalog.gd")
 
 const VIEW_TERRAIN := 0
 const VIEW_ELEVATION := 1
@@ -14,6 +15,7 @@ const VIEW_TEMPERATURE := 3
 const VIEW_RIVER := 4
 const VIEW_FEATURES := 5
 const VIEW_DIRECTIONS := 6
+const VIEW_RESOURCES := 7
 const MODE_WORLD := 0
 const MODE_LOCAL := 1
 const MIN_ZOOM := 0.5
@@ -80,8 +82,10 @@ var generation_task
 var is_generating := false
 var local_elevation_min := -256
 var local_elevation_max := 256
+var resource_catalog
 
 func _ready() -> void:
+	resource_catalog = ResourceDefinitionCatalogScript.new()
 	_setup_view_modes()
 	_setup_stage_modes()
 	generate_button.pressed.connect(_generate_preview)
@@ -115,6 +119,7 @@ func _setup_view_modes() -> void:
 	view_mode_button.add_item("河流", VIEW_RIVER)
 	view_mode_button.add_item("特征", VIEW_FEATURES)
 	view_mode_button.add_item("走向", VIEW_DIRECTIONS)
+	view_mode_button.add_item("资源", VIEW_RESOURCES)
 	view_mode_button.select(0)
 
 func _setup_stage_modes() -> void:
@@ -270,6 +275,8 @@ func _local_cell_color(index: int) -> Color:
 	var view_id = view_mode_button.get_selected_id()
 	if view_id == VIEW_ELEVATION:
 		return _elevation_color(int(local_map_state.heights[index]), local_elevation_min, local_elevation_max)
+	if view_id == VIEW_RESOURCES:
+		return _local_resource_color(index)
 	if view_id == VIEW_FEATURES:
 		return _local_terrain_color(index)
 
@@ -311,6 +318,14 @@ func _local_terrain_color(index: int) -> Color:
 		return Color("#6eaa55")
 	return Color("#444444")
 
+func _local_resource_color(index: int) -> Color:
+	var resource_id: String = _local_first_resource_id_at_index(index)
+	if resource_id != "":
+		return resource_catalog.color(resource_id)
+	if local_map_state.water_flags[index] == 1:
+		return Color("#203d4a")
+	return _local_terrain_color(index).darkened(0.42)
+
 func _tile_color(tile, view_id: int) -> Color:
 	match view_id:
 		VIEW_ELEVATION:
@@ -327,6 +342,8 @@ func _tile_color(tile, view_id: int) -> Color:
 			return _feature_color(tile)
 		VIEW_DIRECTIONS:
 			return _direction_base_color(tile)
+		VIEW_RESOURCES:
+			return _resource_color(tile)
 		_:
 			return TERRAIN_COLORS.get(tile.biome, Color("#cdbb73"))
 
@@ -384,6 +401,13 @@ func _feature_color(tile) -> Color:
 		return Color("#2fb8ff")
 	return Color("#444444")
 
+func _resource_color(tile) -> Color:
+	if not tile.resource_ids.is_empty():
+		return resource_catalog.color(String(tile.resource_ids[0]))
+	if tile.biome == "ocean":
+		return Color("#203d4a")
+	return _height_color(tile.elevation).darkened(0.45)
+
 func _direction_base_color(tile) -> Color:
 	if tile.biome == "ocean":
 		return Color("#203d4a")
@@ -394,7 +418,8 @@ func _update_summary(config) -> void:
 		"ocean": 0,
 		"mountain": 0,
 		"forest": 0,
-		"river": 0
+		"river": 0,
+		"resources": 0
 	}
 	var elevation_total = 0.0
 	for tile in map_state.tiles_by_key.values():
@@ -406,10 +431,12 @@ func _update_summary(config) -> void:
 			counts["forest"] += 1
 		if tile.has_river:
 			counts["river"] += 1
+		if not tile.resource_ids.is_empty():
+			counts["resources"] += 1
 		elevation_total += float(tile.elevation)
 
 	var total = max(1.0, float(map_state.width * map_state.height))
-	var summary_text := "seed %d | %dx%d | stage %s | ocean_ratio %.2f | mountain_count %d | river_source_count %d | continent_bias %.2f\n海洋 %.1f%%  山脉 %.1f%%  森林 %.1f%%  河流地块 %d  平均海拔 %.2f" % [
+	var summary_text := "seed %d | %dx%d | stage %s | ocean_ratio %.2f | mountain_count %d | river_source_count %d | continent_bias %.2f\n海洋 %.1f%%  山脉 %.1f%%  森林 %.1f%%  河流地块 %d  资源地块 %d  平均海拔 %.2f" % [
 		config.seed,
 		config.width,
 		config.height,
@@ -422,6 +449,7 @@ func _update_summary(config) -> void:
 		float(counts["mountain"]) / total * 100.0,
 		float(counts["forest"]) / total * 100.0,
 		int(counts["river"]),
+		int(counts["resources"]),
 		elevation_total / total
 	]
 	summary_label.text = _summary_text_with_elevation_legend(summary_text)
@@ -540,6 +568,7 @@ func _update_direction_overlay_visibility() -> void:
 	var supports_overlay := current_stage_id in [
 		PipelineResultScript.STAGE_RIVERS,
 		PipelineResultScript.STAGE_ENVIRONMENT,
+		PipelineResultScript.STAGE_RESOURCES,
 		PipelineResultScript.STAGE_FINAL
 	]
 	direction_overlay_texture.visible = (
@@ -708,13 +737,14 @@ func _show_tile_info(coord: Vector2i) -> void:
 	if tile == null:
 		_show_empty_tile_info()
 		return
-	local_map_button.disabled = current_stage_id != PipelineResultScript.STAGE_FINAL
+	local_map_button.disabled = not _stage_supports_local_map()
 
-	tile_info_label.text = "选中地块：%d, %d\n生物群系：%s\n标签：%s\n海拔 %d  最低 %d  最高 %d\n温度 %.2f  湿度 %.2f\n河流：%s  强度 %.2f\n流向：%d, %d" % [
+	tile_info_label.text = "选中地块：%d, %d\n生物群系：%s\n标签：%s\n资源：%s\n海拔 %d  最低 %d  最高 %d\n温度 %.2f  湿度 %.2f\n河流：%s  强度 %.2f\n流向：%d, %d" % [
 		tile.offset.col,
 		tile.offset.row,
 		tile.biome,
 		_feature_text(tile.terrain_tags),
+		resource_catalog.display_names(tile.resource_ids),
 		tile.elevation,
 		tile.min_height,
 		tile.max_height,
@@ -738,7 +768,7 @@ func _toggle_local_map() -> void:
 		_show_selected_tile_local_map()
 
 func _show_selected_tile_local_map() -> void:
-	if current_stage_id != PipelineResultScript.STAGE_FINAL:
+	if not _stage_supports_local_map():
 		return
 	if selected_tile == Vector2i(-1, -1):
 		return
@@ -832,7 +862,7 @@ func _show_empty_cell_info(tile_key: String) -> void:
 
 func _show_cell_info(cell: Vector2i) -> void:
 	var index: int = local_map_state.index(cell.x, cell.y)
-	tile_info_label.text = "小地图：%s\n地格：%d, %d\n全局坐标：%d, %d\n高度 %d  坡度 %d\n水体：%s  河流：%s\n地貌：%s" % [
+	tile_info_label.text = "小地图：%s\n地格：%d, %d\n全局坐标：%d, %d\n高度 %d  坡度 %d\n水体：%s  河流：%s\n地貌：%s\n资源：%s" % [
 		local_map_state.tile_key,
 		cell.x,
 		cell.y,
@@ -842,8 +872,38 @@ func _show_cell_info(cell: Vector2i) -> void:
 		local_map_state.slope_values[index],
 		"是" if local_map_state.water_flags[index] == 1 else "否",
 		"是" if local_map_state.river_flags[index] == 1 else "否",
-		_local_terrain_text(index)
+		_local_terrain_text(index),
+		_local_resource_text(index)
 	]
+
+func _stage_supports_local_map() -> bool:
+	return current_stage_id in [
+		PipelineResultScript.STAGE_RESOURCES,
+		PipelineResultScript.STAGE_FINAL
+	]
+
+func _local_first_resource_id_at_index(index: int) -> String:
+	if local_map_state == null:
+		return ""
+	var x: int = index % local_map_state.width
+	var y: int = int(index / local_map_state.width)
+	var resources: Array = local_map_state.resources_at(x, y)
+	if resources.is_empty():
+		return ""
+	return String(resources[0].get("resource_id", ""))
+
+func _local_resource_text(index: int) -> String:
+	if local_map_state == null:
+		return "无"
+	var x: int = index % local_map_state.width
+	var y: int = int(index / local_map_state.width)
+	var resources: Array = local_map_state.resources_at(x, y)
+	if resources.is_empty():
+		return "无"
+	var labels: Array[String] = []
+	for resource in resources:
+		labels.append(resource_catalog.display_name(String(resource.get("resource_id", ""))))
+	return "、".join(labels)
 
 func _local_terrain_text(index: int) -> String:
 	if local_map_state.terrain_flags.size() != local_map_state.heights.size():

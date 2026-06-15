@@ -52,6 +52,7 @@
 
 - 原始摘要字段：`elevation`、`avg_height`、`min_height`、`max_height`、`temperature`、`moisture`。
 - 推导结果：`biome`、`terrain_tags`、`has_river`、`river_flow`、`river_strength`。
+- 资源结果：`resource_ids`，表示该大地图地块包含哪些资源类型。
 - 渲染辅助数据：`river_path_points`、`ridge_path_points`。
 
 这种结构允许后续继续扩展，不需要把所有地貌都硬编码成互斥类型。例如一个地块可以主体是 `grassland`，同时带有 `forest` 标签，并且有 `river` 穿过。
@@ -70,7 +71,8 @@
 4. `BigMapSummaryGenerator` 对每个大地图地块内部进行 `summary_sample_resolution x summary_sample_resolution` 采样。
 5. 根据采样结果写入平均高度、最低/最高高度、主体 biome、温度、湿度和河流强度。
 6. 根据骨架索引生成河流路径点和山脉脊线路径点。
-7. 创建起始城市标记，并写入生成结果文件。
+7. 在资源阶段按资源定义生成 `resource_ids`。
+8. 创建起始城市标记，并写入生成结果文件。
 
 生成结果依赖种子，因此同一配置可以生成稳定地图。
 

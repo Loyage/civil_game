@@ -26,6 +26,7 @@ var river_flags: PackedByteArray
 var terrain_flags: PackedInt32Array
 var slope_values: PackedInt32Array
 var river_carve_points: Array
+var resource_instances: Array
 var average_height: int
 ```
 
@@ -38,6 +39,7 @@ var average_height: int
 - `water_flags` 只表示与大地图海洋掩码一致的水域：当前大地图地块属于 `skeleton.ocean_tiles`，且地格高度低于 `skeleton.sea_level`
 - `terrain_flags` 使用 bitmask 表示多地貌标签：草地、森林、湿地、岩石、沙地、雪地
 - `river_carve_points` 保存已生成河段的切割点、宽度和深度，不保存完整世界级河流切割图层
+- `resource_instances` 保存由大地图 `resource_ids` 派生的小地图资源位置；当前不写入缓存，缓存命中后重新派生
 
 ### `LocalCellState`
 
@@ -56,6 +58,7 @@ var height: int
 var is_water: bool
 var has_river: bool
 var terrain_flags: int
+var resources: Array
 var slope: int
 ```
 
@@ -92,6 +95,8 @@ user://local_maps/{seed}/v{version}/{tile_key}.bin
 - 坡度派生结果
 - 河流切割点、宽度和深度
 - 平均高度
+
+资源实例当前不写入缓存。
 
 ## 存储格式
 
@@ -130,5 +135,6 @@ config_hash: string
 - [x] 设计高度数组存储格式
 - [x] 设计 water/river/slope 派生数组
 - [x] 设计 terrain_flags bitmask 派生数组
+- [x] 设计 resource_instances 派生数组
 - [x] 设计版本不兼容处理流程
 - [x] 设计缓存读写接口

@@ -8,6 +8,7 @@
 - `map.md`
 - `local_map/`
 - `map_generator.md`
+- `resources.md`
 - `city.md`
 - `tech.md`
 - `ui.md`
