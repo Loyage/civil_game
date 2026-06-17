@@ -18,10 +18,14 @@ const VIEW_DIRECTIONS := 6
 const VIEW_RESOURCES := 7
 const MODE_WORLD := 0
 const MODE_LOCAL := 1
+const ENHANCEMENT_AUTO := 0
+const ENHANCEMENT_OFF := 1
 const MIN_ZOOM := 0.5
 const MAX_ZOOM := 16.0
 const ZOOM_STEP := 1.10
 const BASE_TILE_SIZE := 16.0
+const WORLD_ENHANCED_PIXELS_PER_TILE := 8
+const LOCAL_ENHANCED_PIXELS_PER_CELL := 4
 const LOCAL_MAP_DISPLAY_SIZE := Vector2(640.0, 640.0)
 const DIRECTION_OVERLAY_PIXELS_PER_TILE := 12
 const DIRECTION_OVERLAY_FAR_ZOOM := 0.55
@@ -54,6 +58,7 @@ const TERRAIN_COLORS := {
 @onready var view_mode_button: OptionButton = %ViewModeButton
 @onready var stage_button: OptionButton = %StageButton
 @onready var direction_overlay_toggle: CheckButton = %DirectionOverlayToggle
+@onready var visual_enhancement_button: OptionButton = %VisualEnhancementButton
 @onready var generate_button: Button = %GenerateButton
 @onready var cancel_generation_button: Button = %CancelGenerationButton
 @onready var random_seed_button: Button = %RandomSeedButton
@@ -87,6 +92,7 @@ var resource_catalog
 func _ready() -> void:
 	resource_catalog = ResourceDefinitionCatalogScript.new()
 	_setup_view_modes()
+	_setup_visual_enhancement_modes()
 	_setup_stage_modes()
 	generate_button.pressed.connect(_generate_preview)
 	cancel_generation_button.pressed.connect(_cancel_generation)
@@ -95,6 +101,7 @@ func _ready() -> void:
 	view_mode_button.item_selected.connect(func(_index: int) -> void: _on_view_mode_changed())
 	stage_button.item_selected.connect(func(_index: int) -> void: _show_selected_stage())
 	direction_overlay_toggle.toggled.connect(func(_enabled: bool) -> void: _update_direction_overlay_visibility())
+	visual_enhancement_button.item_selected.connect(func(_index: int) -> void: _on_visual_enhancement_changed())
 	preview_viewport.resized.connect(_apply_view_transform)
 	preview_viewport.gui_input.connect(_handle_preview_gui_input)
 	_show_initial_empty_preview()
@@ -121,6 +128,12 @@ func _setup_view_modes() -> void:
 	view_mode_button.add_item("走向", VIEW_DIRECTIONS)
 	view_mode_button.add_item("资源", VIEW_RESOURCES)
 	view_mode_button.select(0)
+
+func _setup_visual_enhancement_modes() -> void:
+	visual_enhancement_button.clear()
+	visual_enhancement_button.add_item("自动", ENHANCEMENT_AUTO)
+	visual_enhancement_button.add_item("关闭", ENHANCEMENT_OFF)
+	visual_enhancement_button.select(0)
 
 func _setup_stage_modes() -> void:
 	stage_button.clear()
@@ -235,12 +248,15 @@ func _render_preview() -> void:
 		_render_local_map()
 		return
 
-	var image = Image.create(map_state.width, map_state.height, false, Image.FORMAT_RGBA8)
+	var pixel_scale := _preview_image_pixel_scale()
+	var image = Image.create(map_state.width * pixel_scale, map_state.height * pixel_scale, false, Image.FORMAT_RGBA8)
 	var view_id = view_mode_button.get_selected_id()
 	for row in range(map_state.height):
 		for col in range(map_state.width):
 			var tile = map_state.get_tile_by_offset(col, row)
-			image.set_pixel(col, row, _stage_tile_color(tile, view_id))
+			_fill_preview_cell(image, col, row, pixel_scale, _stage_tile_color(tile, view_id))
+	if _visual_enhancement_active():
+		_draw_world_visual_enhancement(image, pixel_scale)
 
 	map_texture.texture = ImageTexture.create_from_image(image)
 	base_map_size = Vector2(float(map_state.width), float(map_state.height)) * BASE_TILE_SIZE
@@ -260,10 +276,13 @@ func _render_local_map() -> void:
 		return
 
 	_update_local_elevation_range()
-	var image = Image.create(local_map_state.width, local_map_state.height, false, Image.FORMAT_RGBA8)
+	var pixel_scale := _preview_image_pixel_scale()
+	var image = Image.create(local_map_state.width * pixel_scale, local_map_state.height * pixel_scale, false, Image.FORMAT_RGBA8)
 	for y in range(local_map_state.height):
 		for x in range(local_map_state.width):
-			image.set_pixel(x, y, _local_cell_color(local_map_state.index(x, y)))
+			_fill_preview_cell(image, x, y, pixel_scale, _local_cell_color(local_map_state.index(x, y)))
+	if _visual_enhancement_active():
+		_draw_local_visual_enhancement(image, pixel_scale)
 
 	map_texture.texture = ImageTexture.create_from_image(image)
 	base_map_size = LOCAL_MAP_DISPLAY_SIZE
@@ -318,6 +337,49 @@ func _local_terrain_color(index: int) -> Color:
 		return Color("#6eaa55")
 	return Color("#444444")
 
+func _draw_local_visual_enhancement(image: Image, pixel_scale: int) -> void:
+	for y in range(local_map_state.height):
+		for x in range(local_map_state.width):
+			var index: int = local_map_state.index(x, y)
+			_draw_local_cell_texture(image, x, y, pixel_scale, index)
+			_draw_local_cell_symbol(image, x, y, pixel_scale, index)
+
+func _draw_local_cell_texture(image: Image, x: int, y: int, pixel_scale: int, index: int) -> void:
+	if local_map_state.water_flags[index] == 1 or local_map_state.river_flags[index] == 1:
+		return
+	if local_map_state.terrain_flags.size() != local_map_state.heights.size():
+		return
+	var flags: int = int(local_map_state.terrain_flags[index])
+	if (flags & LocalMapStateScript.TERRAIN_ROCK) != 0:
+		_draw_preview_mark(image, x, y, pixel_scale, Color("#6d6a62"), 0)
+	elif (flags & LocalMapStateScript.TERRAIN_WETLAND) != 0:
+		_draw_preview_mark(image, x, y, pixel_scale, Color("#2f5f55"), 2)
+	elif (flags & LocalMapStateScript.TERRAIN_FOREST) != 0:
+		_draw_preview_mark(image, x, y, pixel_scale, Color("#174b25"), 3)
+	elif (flags & LocalMapStateScript.TERRAIN_SAND) != 0:
+		_draw_preview_mark(image, x, y, pixel_scale, Color("#9a7b3d"), 4)
+	elif (flags & LocalMapStateScript.TERRAIN_SNOW) != 0:
+		_draw_preview_mark(image, x, y, pixel_scale, Color("#ffffff"), 5)
+
+func _draw_local_cell_symbol(image: Image, x: int, y: int, pixel_scale: int, index: int) -> void:
+	var resource_id: String = _local_first_resource_id_at_index(index)
+	if resource_id != "":
+		_draw_resource_symbol(image, x, y, pixel_scale, resource_catalog.color(resource_id))
+		return
+	if local_map_state.water_flags[index] == 1 or local_map_state.river_flags[index] == 1:
+		return
+	if local_map_state.terrain_flags.size() != local_map_state.heights.size():
+		return
+	var flags: int = int(local_map_state.terrain_flags[index])
+	if (flags & LocalMapStateScript.TERRAIN_ROCK) != 0:
+		_draw_preview_symbol(image, x, y, pixel_scale, Color("#f4efe4"), 0)
+	elif (flags & LocalMapStateScript.TERRAIN_FOREST) != 0:
+		_draw_preview_symbol(image, x, y, pixel_scale, Color("#d6f0c6"), 1)
+	elif (flags & LocalMapStateScript.TERRAIN_WETLAND) != 0:
+		_draw_preview_symbol(image, x, y, pixel_scale, Color("#d1f2e6"), 2)
+	elif (flags & LocalMapStateScript.TERRAIN_SAND) != 0 or (flags & LocalMapStateScript.TERRAIN_SNOW) != 0:
+		_draw_preview_symbol(image, x, y, pixel_scale, Color("#fff3c6"), 3)
+
 func _local_resource_color(index: int) -> Color:
 	var resource_id: String = _local_first_resource_id_at_index(index)
 	if resource_id != "":
@@ -325,6 +387,136 @@ func _local_resource_color(index: int) -> Color:
 	if local_map_state.water_flags[index] == 1:
 		return Color("#203d4a")
 	return _local_terrain_color(index).darkened(0.42)
+
+func _draw_world_visual_enhancement(image: Image, pixel_scale: int) -> void:
+	for row in range(map_state.height):
+		for col in range(map_state.width):
+			var tile = map_state.get_tile_by_offset(col, row)
+			if tile == null:
+				continue
+			_draw_world_tile_texture(image, col, row, pixel_scale, tile)
+			_draw_world_tile_symbol(image, col, row, pixel_scale, tile)
+
+func _draw_world_tile_texture(image: Image, col: int, row: int, pixel_scale: int, tile) -> void:
+	if tile.is_mountain():
+		_draw_preview_mark(image, col, row, pixel_scale, Color("#6d6a62"), 0)
+	elif tile.is_hill():
+		_draw_preview_mark(image, col, row, pixel_scale, Color("#6f5d3f"), 1)
+	elif tile.is_swamp():
+		_draw_preview_mark(image, col, row, pixel_scale, Color("#2f5f55"), 2)
+	elif tile.has_feature("forest"):
+		_draw_preview_mark(image, col, row, pixel_scale, Color("#174b25"), 3)
+	elif tile.biome == "desert":
+		_draw_preview_mark(image, col, row, pixel_scale, Color("#9a7b3d"), 4)
+	elif tile.biome == "snow_mountain" or tile.biome == "tundra":
+		_draw_preview_mark(image, col, row, pixel_scale, Color("#ffffff"), 5)
+
+func _draw_world_tile_symbol(image: Image, col: int, row: int, pixel_scale: int, tile) -> void:
+	if not tile.resource_ids.is_empty():
+		_draw_resource_symbol(image, col, row, pixel_scale, resource_catalog.color(String(tile.resource_ids[0])))
+	elif tile.is_mountain():
+		_draw_preview_symbol(image, col, row, pixel_scale, Color("#f4efe4"), 0)
+	elif tile.has_feature("forest"):
+		_draw_preview_symbol(image, col, row, pixel_scale, Color("#d6f0c6"), 1)
+	elif tile.is_swamp():
+		_draw_preview_symbol(image, col, row, pixel_scale, Color("#d1f2e6"), 2)
+	elif tile.biome == "desert" or tile.biome == "snow_mountain" or tile.biome == "tundra":
+		_draw_preview_symbol(image, col, row, pixel_scale, Color("#fff3c6"), 3)
+	elif tile.is_hill():
+		_draw_preview_symbol(image, col, row, pixel_scale, Color("#f0d9a2"), 4)
+
+func _preview_image_pixel_scale() -> int:
+	if not _visual_enhancement_active():
+		return 1
+	if preview_mode == MODE_LOCAL:
+		return LOCAL_ENHANCED_PIXELS_PER_CELL
+	return WORLD_ENHANCED_PIXELS_PER_TILE
+
+func _fill_preview_cell(image: Image, cell_x: int, cell_y: int, pixel_scale: int, color: Color) -> void:
+	var origin := Vector2i(cell_x * pixel_scale, cell_y * pixel_scale)
+	for py in range(pixel_scale):
+		for px in range(pixel_scale):
+			image.set_pixel(origin.x + px, origin.y + py, color)
+
+func _draw_preview_mark(image: Image, cell_x: int, cell_y: int, pixel_scale: int, color: Color, pattern: int) -> void:
+	var origin := Vector2i(cell_x * pixel_scale, cell_y * pixel_scale)
+	match pattern:
+		0:
+			for offset in range(pixel_scale):
+				_blend_preview_pixel(image, origin.x + offset, origin.y + pixel_scale - 1 - offset, color, 0.30)
+		1:
+			var hill_y := origin.y + maxi(1, int(pixel_scale * 0.62))
+			for px in range(1, maxi(2, pixel_scale - 1)):
+				_blend_preview_pixel(image, origin.x + px, hill_y, color, 0.22)
+		2:
+			var wetland_y := origin.y + int(pixel_scale * 0.58)
+			for px in range(1, maxi(2, pixel_scale - 1)):
+				if px % 2 == 0:
+					_blend_preview_pixel(image, origin.x + px, wetland_y, color, 0.30)
+		3:
+			_blend_preview_pixel(image, origin.x + int(pixel_scale * 0.35), origin.y + int(pixel_scale * 0.40), color, 0.28)
+			_blend_preview_pixel(image, origin.x + int(pixel_scale * 0.62), origin.y + int(pixel_scale * 0.56), color, 0.28)
+		4:
+			_blend_preview_pixel(image, origin.x + ((cell_x * 3 + cell_y) % pixel_scale), origin.y + ((cell_y * 5 + cell_x) % pixel_scale), color, 0.26)
+		5:
+			_blend_preview_pixel(image, origin.x + ((cell_x * 7 + 1) % pixel_scale), origin.y + ((cell_y * 11 + 2) % pixel_scale), color, 0.30)
+
+func _draw_preview_symbol(image: Image, cell_x: int, cell_y: int, pixel_scale: int, color: Color, symbol: int) -> void:
+	var origin := Vector2i(cell_x * pixel_scale, cell_y * pixel_scale)
+	var center := origin + Vector2i(int(pixel_scale / 2), int(pixel_scale / 2))
+	match symbol:
+		0:
+			_draw_preview_triangle(image, origin, pixel_scale, color)
+		1:
+			_draw_preview_tree(image, origin, pixel_scale, color)
+		2:
+			_draw_preview_wave(image, origin, pixel_scale, color)
+		3:
+			_blend_preview_pixel(image, center.x, center.y, color, 0.60)
+		4:
+			_draw_preview_triangle(image, origin + Vector2i(1, 1), maxi(2, pixel_scale - 2), color)
+
+func _draw_resource_symbol(image: Image, cell_x: int, cell_y: int, pixel_scale: int, color: Color) -> void:
+	var origin := Vector2i(cell_x * pixel_scale, cell_y * pixel_scale)
+	var center := origin + Vector2i(int(pixel_scale / 2), int(pixel_scale / 2))
+	var mark_color := color.lightened(0.30)
+	_blend_preview_pixel(image, center.x, center.y, mark_color, 0.90)
+	_blend_preview_pixel(image, center.x - 1, center.y, mark_color, 0.72)
+	_blend_preview_pixel(image, center.x + 1, center.y, mark_color, 0.72)
+	_blend_preview_pixel(image, center.x, center.y - 1, mark_color, 0.72)
+	_blend_preview_pixel(image, center.x, center.y + 1, mark_color, 0.72)
+
+func _draw_preview_triangle(image: Image, origin: Vector2i, size: int, color: Color) -> void:
+	var center_x := origin.x + int(size / 2)
+	for row in range(size):
+		var half_width := int(float(row) / maxf(1.0, float(size - 1)) * float(size / 2))
+		var y := origin.y + row
+		var start_x := maxi(origin.x, center_x - half_width)
+		var end_x := mini(origin.x + size - 1, center_x + half_width)
+		for x in range(start_x, end_x + 1):
+			_blend_preview_pixel(image, x, y, color, 0.58)
+
+func _draw_preview_tree(image: Image, origin: Vector2i, size: int, color: Color) -> void:
+	var center_x := origin.x + int(size / 2)
+	var top_y := origin.y + maxi(0, int(size * 0.20))
+	var mid_y := origin.y + maxi(1, int(size * 0.48))
+	_blend_preview_pixel(image, center_x, top_y, color, 0.62)
+	_blend_preview_pixel(image, center_x - 1, mid_y, color, 0.55)
+	_blend_preview_pixel(image, center_x, mid_y, color, 0.55)
+	_blend_preview_pixel(image, center_x + 1, mid_y, color, 0.55)
+	_blend_preview_pixel(image, center_x, origin.y + mini(size - 1, mid_y - origin.y + 1), color.darkened(0.35), 0.50)
+
+func _draw_preview_wave(image: Image, origin: Vector2i, size: int, color: Color) -> void:
+	var y := origin.y + int(size * 0.56)
+	for px in range(1, maxi(2, size - 1)):
+		if px % 2 == 1:
+			_blend_preview_pixel(image, origin.x + px, y, color, 0.58)
+
+func _blend_preview_pixel(image: Image, x: int, y: int, color: Color, alpha: float) -> void:
+	if x < 0 or y < 0 or x >= image.get_width() or y >= image.get_height():
+		return
+	var base := image.get_pixel(x, y)
+	image.set_pixel(x, y, base.lerp(color, clampf(alpha, 0.0, 1.0)))
 
 func _tile_color(tile, view_id: int) -> Color:
 	match view_id:
@@ -830,9 +1022,22 @@ func _update_summary_for_local_map(tile) -> void:
 	summary_label.text = _summary_text_with_elevation_legend(summary_text)
 
 func _summary_text_with_elevation_legend(summary_text: String) -> String:
-	if view_mode_button.get_selected_id() != VIEW_ELEVATION:
+	var result := summary_text
+	if view_mode_button.get_selected_id() == VIEW_ELEVATION:
+		result = "%s\n%s" % [result, _elevation_legend_text()]
+	return _summary_text_with_visual_legend(result)
+
+func _visual_enhancement_active() -> bool:
+	if visual_enhancement_button == null:
+		return false
+	if visual_enhancement_button.get_selected_id() == ENHANCEMENT_OFF:
+		return false
+	return view_mode_button.get_selected_id() in [VIEW_TERRAIN, VIEW_FEATURES, VIEW_RESOURCES]
+
+func _summary_text_with_visual_legend(summary_text: String) -> String:
+	if not _visual_enhancement_active():
 		return summary_text
-	return "%s\n%s" % [summary_text, _elevation_legend_text()]
+	return "%s\n视觉增强：● 资源  ◆ 山地/岩石  ♣ 森林  ≈ 湿地  · 沙地/雪地  ▲ 丘陵" % summary_text
 
 func _elevation_legend_text() -> String:
 	if preview_mode == MODE_LOCAL:
@@ -843,6 +1048,13 @@ func _elevation_legend_text() -> String:
 	return "海拔热力图（大地图 -256..256）：深蓝 -256..0，绿 0..64，黄 64..128，橙 128..192，红 192..240，白 240..256"
 
 func _on_view_mode_changed() -> void:
+	_render_preview()
+	if preview_mode == MODE_LOCAL:
+		_update_local_summary_after_view_change()
+	elif map_state != null:
+		_update_summary(_build_config_from_inputs())
+
+func _on_visual_enhancement_changed() -> void:
 	_render_preview()
 	if preview_mode == MODE_LOCAL:
 		_update_local_summary_after_view_change()
